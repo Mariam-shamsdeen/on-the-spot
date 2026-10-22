@@ -3,61 +3,51 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0C1020">
+  <meta name="theme-color" content="#0D0820">
   <title>On the Spot</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230C1020'/><path d='M16 16 L16 7 A9 9 0 0 1 25 16 Z' fill='%2300AEEF'/><path d='M16 16 L25 16 A9 9 0 0 1 16 25 Z' fill='%23EC008C'/><path d='M16 16 L16 25 A9 9 0 0 1 7 16 Z' fill='%23FFF200'/><path d='M16 16 L7 16 A9 9 0 0 1 16 7 Z' fill='%23FFFFFF'/></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%23FFB547'/><stop offset='.5' stop-color='%23FF5E9C'/><stop offset='1' stop-color='%238B6CFF'/></linearGradient></defs><rect width='32' height='32' rx='9' fill='url(%23g)'/><circle cx='16' cy='16' r='5.5' fill='white'/></svg>">
 </head>
 <body>
-  <!-- Login: a printer feeds out the sign-in sheet -->
+  <!-- floating stationery, shared by login and app -->
+  <div class="scene" id="scene" aria-hidden="true">
+    <span class="obj" data-obj="pencil"  style="--x:4%;  --y:7%;  --r:-28deg; --s:1;    --d:7s;  --z:1.6"></span>
+    <span class="obj" data-obj="notebook" style="--x:78%; --y:4%;  --r:14deg;  --s:1;    --d:9s;  --z:1.1"></span>
+    <span class="obj" data-obj="plane"   style="--x:40%; --y:76%; --r:-10deg; --s:1;    --d:6s;  --z:2"></span>
+    <span class="obj" data-obj="sheet"   style="--x:84%; --y:64%; --r:-18deg; --s:.95;  --d:8s;  --z:1.3"></span>
+    <span class="obj" data-obj="pen"     style="--x:3%;  --y:62%; --r:22deg;  --s:1;    --d:7.5s;--z:1.8"></span>
+    <span class="obj obj-far" data-obj="eraser" style="--x:56%; --y:6%; --r:24deg; --s:.7; --d:10s; --z:.6"></span>
+    <span class="obj obj-far" data-obj="clip"   style="--x:28%; --y:30%; --r:-36deg; --s:.6; --d:11s; --z:.5"></span>
+  </div>
+
+  <!-- Login -->
   <main id="login-view" class="login" hidden>
-    <div class="login-stage">
-      <div class="printer" aria-hidden="true">
-        <span class="printer-led"></span>
-        <span class="printer-label">Ready</span>
-        <span class="printer-slot"></span>
-      </div>
-      <div class="feed">
-        <form id="login-form" class="login-card sheet" autocomplete="on">
-          <span class="crop crop-tl" aria-hidden="true"></span>
-          <span class="crop crop-tr" aria-hidden="true"></span>
-          <span class="crop crop-bl" aria-hidden="true"></span>
-          <span class="crop crop-br" aria-hidden="true"></span>
-
-          <div class="press-mark">
-            <span class="brand-dot brand-dot-lg" aria-hidden="true"></span>
-            <h1 class="press-title">
-              <span class="ink-k">On the Spot</span>
-              <span class="ink-layer ink-c" aria-hidden="true">On the Spot</span>
-              <span class="ink-layer ink-m" aria-hidden="true">On the Spot</span>
-              <span class="ink-layer ink-y" aria-hidden="true">On the Spot</span>
-            </h1>
-            <p class="press-sub">Stationery &amp; printing</p>
-          </div>
-
-          <label>Username
-            <input name="username" autocomplete="username" required autofocus>
-          </label>
-          <label>Password
-            <input name="password" type="password" autocomplete="current-password" required>
-          </label>
-          <p class="form-error" id="login-error" role="alert"></p>
-          <button class="btn btn-primary btn-block" type="submit">Sign in</button>
-
-          <div class="color-bar" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-        </form>
-      </div>
-    </div>
+    <section class="login-hero">
+      <div class="logo-mark" aria-hidden="true"></div>
+      <h1 class="hero-title">On the <span class="grad-text">Spot</span></h1>
+      <p class="hero-sub">Copybooks, pens, printing. Everything for school, in one till.</p>
+    </section>
+    <form id="login-form" class="login-card glass" autocomplete="on">
+      <h2>Sign in</h2>
+      <label>Username
+        <input name="username" autocomplete="username" required autofocus>
+      </label>
+      <label>Password
+        <input name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <p class="form-error" id="login-error" role="alert"></p>
+      <button class="btn btn-primary btn-block btn-lg" type="submit">Open the till</button>
+    </form>
   </main>
 
   <!-- App -->
   <div id="app-view" class="shell" hidden>
-    <aside class="sidebar">
+    <aside class="sidebar glass">
       <div class="brand">
-        <span class="brand-dot" aria-hidden="true"></span>
+        <span class="logo-mark logo-sm" aria-hidden="true"></span>
         <span id="shop-name">On the Spot</span>
       </div>
       <nav id="nav" class="nav"></nav>
