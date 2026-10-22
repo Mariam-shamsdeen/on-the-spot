@@ -30,3 +30,36 @@
   });
 
 })();
+
+// ---------- install as an app (PWA) ----------
+(() => {
+  if ('serviceWorker' in navigator) {
+    addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+  }
+  let deferred = null;
+  const listeners = [];
+  const changed = () => listeners.forEach((f) => { try { f(); } catch {} });
+  const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferred = e; changed(); });
+  addEventListener('appinstalled', () => { deferred = null; changed(); });
+  window.otsInstall = {
+    available: () => !standalone() && (!!deferred || ios),
+    onChange: (f) => { listeners.push(f); f(); },
+    async prompt(showIosHelp) {
+      if (deferred) {
+        deferred.prompt();
+        try { await deferred.userChoice; } catch {}
+        deferred = null; changed();
+      } else if (ios && showIosHelp) showIosHelp();
+    },
+    iosHelpHtml: (name) => `
+      <div class="modal-head"><h2>Install ${name}</h2><button class="btn btn-ghost btn-sm" data-close>Close</button></div>
+      <ol class="ios-steps">
+        <li>Open this page in <strong>Safari</strong>.</li>
+        <li>Tap the <strong>Share</strong> button <span class="ios-share" aria-hidden="true"></span> at the bottom of the screen.</li>
+        <li>Scroll down and tap <strong>Add to Home Screen</strong>, then <strong>Add</strong>.</li>
+      </ol>
+      <p class="muted" style="margin:0">The app icon appears on your home screen and opens full screen.</p>`,
+  };
+})();

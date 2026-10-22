@@ -44,16 +44,20 @@
   }
 
   async function api(path, opts = {}) {
-    const res = await fetch('/api/public' + path, {
-      method: opts.method || 'GET',
-      headers: { 'Content-Type': 'application/json' },
-      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-    });
+    let res;
+    try {
+      res = await fetch('/api/public' + path, {
+        method: opts.method || 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      });
+    } catch { throw new Error('No internet connection. Check your Wi-Fi or mobile data and try again.'); }
     let data = null;
     try { data = await res.json(); } catch {}
     if (!res.ok) throw new Error((data && data.error) || 'Something went wrong. Please try again.');
     return data;
   }
+  addEventListener('online', () => { if (!S.shop) location.reload(); });
 
   function openModal(html) {
     const root = $('#modal-root');
@@ -476,6 +480,10 @@
   }
   window.addEventListener('popstate', () => route());
   $('#c-my-orders').onclick = showMyOrders;
+  if (window.otsInstall) {
+    window.otsInstall.onChange(() => { $('#c-install').hidden = !window.otsInstall.available(); });
+    $('#c-install').onclick = () => window.otsInstall.prompt(() => openModal(window.otsInstall.iosHelpHtml('On the Spot')));
+  }
   window.addEventListener('beforeunload', (e) => { if (itemCount() && !location.pathname.startsWith('/track')) { e.preventDefault(); e.returnValue = ''; } });
 
   (async function boot() {
@@ -485,7 +493,7 @@
       $('#c-shop-name').textContent = d.shop.name;
       route();
     } catch (err) {
-      shell(`<section class="c-hero"><h1>Can't load the <span class="grad-text">shop</span></h1><p class="c-sub">${esc(err.message)}</p><button class="btn btn-primary" onclick="location.reload()">Try again</button></section>`);
+      shell(`<section class="c-hero"><h1>${navigator.onLine ? "Can't load the" : 'No'} <span class="grad-text">${navigator.onLine ? 'shop' : 'internet'}</span></h1><p class="c-sub">${esc(err.message)}</p><button class="btn btn-primary" onclick="location.reload()">Try again</button></section>`);
     }
   })();
 })();

@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0D0820">
   <title>On the Spot — Order online</title>
+  <link rel="manifest" href="/manifest-order.webmanifest">
+  <link rel="apple-touch-icon" href="/icon-order-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="On the Spot">
   <meta name="description" content="Send your files to print and order stationery from On the Spot. Pick it up ready.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -25,7 +31,10 @@
       <span class="logo-mark logo-sm" aria-hidden="true"></span>
       <span id="c-shop-name">On the Spot</span>
     </a>
-    <button class="btn btn-ghost btn-sm" id="c-my-orders" type="button" hidden>My orders</button>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-ghost btn-sm install-btn" id="c-install" type="button" hidden>Install app</button>
+      <button class="btn btn-ghost btn-sm" id="c-my-orders" type="button" hidden>My orders</button>
+    </div>
   </header>
 
   <main id="c-view" class="c-wrap"></main>

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0D0820">
+  <title>No internet — On the Spot</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="customer">
+  <div class="scene" id="scene" aria-hidden="true">
+    <span class="obj" data-obj="plane" style="--x:58%; --y:12%; --r:-10deg; --s:.9; --d:6s; --z:1"></span>
+    <span class="obj" data-obj="pencil" style="--x:-8%; --y:70%; --r:-24deg; --s:.8; --d:7s; --z:1"></span>
+  </div>
+  <main class="c-wrap" style="min-height:100vh;align-content:center;text-align:center;justify-items:center">
+    <span class="logo-mark" aria-hidden="true"></span>
+    <section class="c-hero" style="padding-top:10px">
+      <h1>No <span class="grad-text">internet</span></h1>
+      <p class="c-sub" style="margin-left:auto;margin-right:auto">Check your Wi-Fi or mobile data, then try again.</p>
+      <button class="btn btn-primary btn-lg" onclick="location.reload()">Try again</button>
+    </section>
+  </main>
+  <script src="/objects.js"></script>
+  <script>addEventListener('online', () => location.reload());</script>
+</body>
+</html>

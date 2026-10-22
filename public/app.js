@@ -36,11 +36,14 @@
   };
 
   async function api(path, opts = {}) {
-    const res = await fetch('/api' + path, {
-      method: opts.method || 'GET',
-      headers: { 'Content-Type': 'application/json', ...(state.token ? { Authorization: 'Bearer ' + state.token } : {}) },
-      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-    });
+    let res;
+    try {
+      res = await fetch('/api' + path, {
+        method: opts.method || 'GET',
+        headers: { 'Content-Type': 'application/json', ...(state.token ? { Authorization: 'Bearer ' + state.token } : {}) },
+        body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      });
+    } catch { throw new Error('No internet connection. Check your Wi-Fi or data and try again.'); }
     let data = null;
     try { data = await res.json(); } catch {}
     if (res.status === 401 && path !== '/login') { signOutLocal(); throw new Error((data && data.error) || 'Please sign in again.'); }
@@ -1149,6 +1152,17 @@
     go('sell');
     if (missing.length) toast('Not in the product list anymore: ' + missing.join(', '), true);
     else toast(`Order #${o.code} is in the till. Take the payment.`);
+  }
+
+  // ================= install as app =================
+  if (window.otsInstall) {
+    const help = () => openModal(window.otsInstall.iosHelpHtml('the till app'));
+    window.otsInstall.onChange(() => {
+      const ok = window.otsInstall.available();
+      $('#install-login').hidden = !ok; $('#install-side').hidden = !ok;
+    });
+    $('#install-login').onclick = () => window.otsInstall.prompt(help);
+    $('#install-side').onclick = () => window.otsInstall.prompt(help);
   }
 
   // ================= boot =================
