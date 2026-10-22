@@ -88,37 +88,13 @@
 
   // ================= auth =================
   function signOutLocal() {
+    clearInterval(orderPoll);
     state.token = null; state.user = null;
     store.del('ots_token');
     showLogin();
   }
 
-  // ================= 3D stationery (SVG) =================
-  let objId = 0;
-  const OBJ = {
-    pencil: () => { const g = 'pg' + objId++; return `<svg width="300" height="60" viewBox="0 0 300 60"><defs><linearGradient id="${g}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFD36B"/><stop offset=".5" stop-color="#FFB547"/><stop offset="1" stop-color="#D98A1C"/></linearGradient></defs><rect x="40" y="8" width="210" height="44" rx="6" fill="url(#${g})"/><rect x="40" y="27" width="210" height="6" fill="#E89F2A" opacity=".5"/><rect x="250" y="8" width="28" height="44" fill="#C9C9D6"/><rect x="254" y="8" width="4" height="44" fill="#E6E6EF"/><rect x="276" y="8" width="20" height="44" rx="8" fill="#FF7AA8"/><path d="M40 8 L4 30 L40 52Z" fill="#F2D3A6"/><path d="M14 24 L4 30 L14 36Z" fill="#2B2440"/></svg>`; },
-    notebook: () => `<svg width="190" height="240" viewBox="0 0 190 240"><rect x="6" y="6" width="190" height="240" rx="14" fill="#5B3FD1" transform="translate(-6,-6)"/><rect width="184" height="234" rx="14" fill="#8B6CFF"/><rect x="18" width="10" height="234" fill="#6F50E6"/><rect x="45" y="40" width="120" height="70" rx="8" fill="#fff" opacity=".96"/><rect x="58" y="58" width="80" height="8" rx="4" fill="#8B6CFF"/><rect x="58" y="78" width="60" height="8" rx="4" fill="#C9BCFF"/></svg>`,
-    plane: () => `<svg width="170" height="120" viewBox="0 0 170 120"><path d="M0 60 L170 0 L120 120 L80 75Z" fill="#fff"/><path d="M80 75 L170 0 L95 95Z" fill="#DCD6F5"/><path d="M80 75 L95 95 L88 112Z" fill="#B9B0E0"/></svg>`,
-    sheet: () => `<svg width="150" height="190" viewBox="0 0 150 190"><rect width="150" height="190" rx="8" fill="#fff"/><rect x="18" y="24" width="100" height="10" rx="5" fill="#FF5E9C"/><rect x="18" y="48" width="114" height="6" rx="3" fill="#E4E0F2"/><rect x="18" y="62" width="114" height="6" rx="3" fill="#E4E0F2"/><rect x="18" y="76" width="90" height="6" rx="3" fill="#E4E0F2"/><rect x="18" y="100" width="114" height="60" rx="6" fill="#FFB547" opacity=".9"/></svg>`,
-    pen: () => `<svg width="70" height="230" viewBox="0 0 70 230"><rect x="15" y="0" width="40" height="160" rx="10" fill="#3D7BFF"/><rect x="15" y="0" width="12" height="160" rx="6" fill="#6B9BFF" opacity=".6"/><rect x="15" y="20" width="40" height="18" fill="#1E4FCC"/><rect x="52" y="10" width="8" height="70" rx="4" fill="#1E4FCC"/><path d="M15 160 L55 160 L42 205 L28 205Z" fill="#E8E8F2"/><circle cx="35" cy="212" r="5" fill="#1E4FCC"/></svg>`,
-    eraser: () => `<svg width="120" height="70" viewBox="0 0 120 70"><rect x="0" y="10" width="120" height="50" rx="10" fill="#FF7AA8"/><rect x="0" y="10" width="54" height="50" rx="10" fill="#4D8BFF"/><rect x="44" y="10" width="14" height="50" fill="#4D8BFF"/><rect x="6" y="14" width="108" height="8" rx="4" fill="#fff" opacity=".25"/></svg>`,
-    clip: () => `<svg width="60" height="150" viewBox="0 0 60 150"><path d="M20 30 V115 a12 12 0 0 0 24 0 V20 a16 16 0 0 0 -32 0 V120 a20 20 0 0 0 40 0 V40" fill="none" stroke="#C9C9D6" stroke-width="6" stroke-linecap="round"/></svg>`,
-  };
-  const objSvg = (name) => (OBJ[name] ? OBJ[name]() : '');
-  $$('[data-obj]').forEach((el) => (el.innerHTML = objSvg(el.dataset.obj)));
-
-  // gentle parallax: objects drift with the mouse (stronger on the login screen)
-  const scene = $('#scene');
-  let raf = 0;
-  window.addEventListener('pointermove', (e) => {
-    if (raf || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    raf = requestAnimationFrame(() => {
-      raf = 0;
-      const k = document.body.classList.contains('in-app') ? 4 : 14;
-      scene.style.setProperty('--px', (((e.clientX / innerWidth) - 0.5) * -k).toFixed(2));
-      scene.style.setProperty('--py', (((e.clientY / innerHeight) - 0.5) * -k).toFixed(2));
-    });
-  });
+  const objSvg = (name) => window.objSvg(name);
 
   function showLogin() {
     document.body.classList.remove('in-app');
@@ -173,6 +149,7 @@
   // ================= app start =================
   const NAV = [
     { id: 'sell', label: 'Sell', all: true },
+    { id: 'orders', label: 'Online orders', all: true },
     { id: 'sales', label: "Today's sales", all: true },
     { id: 'products', label: 'Products', all: true },
     { sep: true, admin: true },
@@ -191,6 +168,7 @@
     await refreshData();
     loadCart();
     go(state.view);
+    startOrderPolling();
   }
 
   async function refreshData() {
@@ -209,25 +187,62 @@
 
   function renderNav() {
     $('#nav').innerHTML = NAV.filter((n) => n.all || (n.admin && isAdmin()))
-      .map((n) => (n.sep ? '<div class="nav-sep"></div>' : `<button type="button" data-view="${n.id}">${esc(n.label)}</button>`))
+      .map((n) => (n.sep ? '<div class="nav-sep"></div>' : `<button type="button" data-view="${n.id}">${esc(n.label)}${n.id === 'orders' ? '<span class="nav-badge" id="orders-badge" hidden></span>' : ''}</button>`))
       .join('');
     $$('#nav button').forEach((b) => (b.onclick = () => go(b.dataset.view)));
+  }
+
+  // ---------- new online orders: badge + sound ----------
+  let orderPoll = null, lastOrderId = null;
+  function beep() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [0, 0.18].forEach((t, i) => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'sine'; o.frequency.value = i ? 1320 : 880;
+        g.gain.setValueAtTime(0.0001, ctx.currentTime + t);
+        g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.28);
+        o.connect(g).connect(ctx.destination); o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.3);
+      });
+    } catch {}
+  }
+  async function checkOrders() {
+    if (!state.token) return;
+    try {
+      const d = await api('/orders/new-count');
+      const b = $('#orders-badge');
+      if (b) { b.hidden = !d.n; b.textContent = d.n; }
+      const last = Number(d.last_id);
+      if (lastOrderId !== null && last > lastOrderId) {
+        beep();
+        toast('New online order');
+        if (state.view === 'orders') renderOrders();
+      }
+      lastOrderId = Math.max(lastOrderId || 0, last);
+    } catch {}
+  }
+  function startOrderPolling() {
+    clearInterval(orderPoll);
+    lastOrderId = null;
+    checkOrders();
+    orderPoll = setInterval(checkOrders, 20000);
   }
 
   function go(view) {
     const allowed = NAV.find((n) => n.id === view && (n.all || isAdmin()));
     state.view = allowed ? view : 'sell';
     $$('#nav button').forEach((b) => b.setAttribute('aria-current', b.dataset.view === state.view ? 'page' : 'false'));
-    const views = { sell: renderSell, sales: renderSales, products: renderProducts, printing: renderPrinting, users: renderUsers, settings: renderSettings };
+    const views = { sell: renderSell, orders: renderOrders, sales: renderSales, products: renderProducts, printing: renderPrinting, users: renderUsers, settings: renderSettings };
     views[state.view]();
   }
 
   // ================= SELL =================
-  function saveCart() { store.set('ots_cart', JSON.stringify({ cart: state.cart, discount: state.discount })); }
+  function saveCart() { store.set('ots_cart', JSON.stringify({ cart: state.cart, discount: state.discount, order: state.pendingOrder || null })); }
   function loadCart() {
     try {
       const d = JSON.parse(store.get('ots_cart') || 'null');
-      if (d && Array.isArray(d.cart)) { state.cart = d.cart; state.discount = num(d.discount); }
+      if (d && Array.isArray(d.cart)) { state.cart = d.cart; state.discount = num(d.discount); state.pendingOrder = d.order || null; }
     } catch {}
   }
 
@@ -286,7 +301,7 @@
     });
     $('#cart-clear').onclick = async () => {
       if (!state.cart.length) return;
-      if (await confirmBox('Clear the whole sale?', 'Clear sale', true)) { state.cart = []; state.discount = 0; saveCart(); renderCart(); }
+      if (await confirmBox('Clear the whole sale?', 'Clear sale', true)) { state.cart = []; state.discount = 0; state.pendingOrder = null; saveCart(); renderCart(); }
     };
     renderChips(); renderTiles(); renderCart();
     search.focus();
@@ -397,6 +412,10 @@
     $$('[data-del]', lines).forEach((b) => (b.onclick = () => { state.cart.splice(Number(b.dataset.del), 1); saveCart(); renderCart(); }));
     $$('[data-edit]', lines).forEach((b) => (b.onclick = () => openPrintJob(Number(b.dataset.edit))));
 
+    if (state.pendingOrder) {
+      lines.insertAdjacentHTML('afterbegin', `<div class="cart-order" style="margin-top:10px"><span>Online order <strong>#${esc(state.pendingOrder.code)}</strong> · ${esc(state.pendingOrder.name)}</span><button class="qty-btn" id="cart-detach" aria-label="Unlink online order">×</button></div>`);
+      $('#cart-detach').onclick = () => { state.pendingOrder = null; saveCart(); renderCart(); };
+    }
     const sub = cartSubtotal();
     if (state.discount > sub) state.discount = sub;
     const total = cartTotal();
@@ -512,6 +531,11 @@
           ? { type: 'product', product_id: i.product_id, qty: i.qty }
           : { type: 'print', color: i.color, size: i.size, sided: i.sided, pages: i.pages, copies: i.copies, extras: i.extras });
         const sale = await api('/sales', { method: 'POST', body: { items, discount_usd: state.discount, paid_usd: num(pu.value), paid_lbp: num(pl.value) } });
+        if (state.pendingOrder) {
+          try { await api(`/orders/${state.pendingOrder.id}/complete`, { method: 'POST', body: { sale_id: sale.id } }); }
+          catch (e) { toast('Sale saved, but the online order was not closed: ' + e.message, true); }
+          state.pendingOrder = null;
+        }
         state.cart = []; state.discount = 0; saveCart();
         state.products = await api('/products');
         renderSell();
@@ -906,15 +930,39 @@
   // ================= SETTINGS (owner) =================
   function renderSettings() {
     const s = state.settings;
+    const link = location.origin + '/order';
     $('#view').innerHTML = `
-      <div class="page-head"><div><h1>Settings</h1><p class="muted">Shop details and the dollar rate used at the till.</p></div></div>
-      <form class="panel" id="set-form" style="display:grid;gap:14px;max-width:620px">
-        <label>Shop name<input name="shop_name" value="${esc(s.shop_name)}" required></label>
-        <div class="grid-2">
-          <label>Dollar rate (LBP for $1)<input name="exchange_rate" type="number" min="1" step="1" value="${esc(s.exchange_rate)}" required inputmode="numeric"></label>
-          <label>Round LBP to nearest<select name="lbp_round">${[1, 500, 1000, 5000, 10000].map((v) => `<option value="${v}" ${num(s.lbp_round) === v ? 'selected' : ''}>${v.toLocaleString('en-US')} LBP</option>`).join('')}</select></label>
+      <div class="page-head"><div><h1>Settings</h1><p class="muted">Shop details, the dollar rate, and online orders.</p></div></div>
+      <form id="set-form" style="display:grid;gap:16px;max-width:760px">
+        <div class="panel" style="display:grid;gap:14px">
+          <h2>Shop</h2>
+          <label>Shop name<input name="shop_name" value="${esc(s.shop_name)}" required></label>
+          <div class="grid-2">
+            <label>Dollar rate (LBP for $1)<input name="exchange_rate" type="number" min="1" step="1" value="${esc(s.exchange_rate)}" required inputmode="numeric"></label>
+            <label>Round LBP to nearest<select name="lbp_round">${[1, 500, 1000, 5000, 10000].map((v) => `<option value="${v}" ${num(s.lbp_round) === v ? 'selected' : ''}>${v.toLocaleString('en-US')} LBP</option>`).join('')}</select></label>
+          </div>
+          <label>Receipt footer<input name="receipt_footer" value="${esc(s.receipt_footer)}"></label>
         </div>
-        <label>Receipt footer<input name="receipt_footer" value="${esc(s.receipt_footer)}"></label>
+        <div class="panel" style="display:grid;gap:14px">
+          <h2>Online orders</h2>
+          <div class="grid-2">
+            <label>Customers can order online<select name="online_orders"><option value="on" ${s.online_orders !== 'off' ? 'selected' : ''}>On</option><option value="off" ${s.online_orders === 'off' ? 'selected' : ''}>Paused</option></select></label>
+            <label>Shop WhatsApp number<input name="whatsapp_number" value="${esc(s.whatsapp_number || '')}" placeholder="03 123 456" inputmode="tel"></label>
+          </div>
+          <div class="grid-2">
+            <label>Opening hours<input name="shop_hours" value="${esc(s.shop_hours || '')}" placeholder="Mon–Sat, 8 am – 7 pm"></label>
+            <label>Address<input name="shop_address" value="${esc(s.shop_address || '')}" placeholder="Street, town"></label>
+          </div>
+          <div class="share-box">
+            <div style="display:grid;gap:10px">
+              <span class="field-label" style="margin:0">Customer page link</span>
+              <div class="link-row"><input id="cust-link" value="${esc(link)}" readonly><button class="btn" type="button" id="copy-link">Copy</button></div>
+              <div class="toolbar"><a class="btn btn-sm" href="/order" target="_blank" rel="noopener" style="text-decoration:none">Open customer page</a><button class="btn btn-sm" type="button" id="qr-download">Download QR code</button></div>
+              <p class="muted" style="margin:0;font-size:13px">Print the QR code and put it on the counter, or share the link on Instagram and WhatsApp.</p>
+            </div>
+            <div class="qr" id="qr"><span class="muted" style="color:#555;font-size:12px">Loading QR…</span></div>
+          </div>
+        </div>
         <p class="form-error" id="set-error"></p>
         <div><button class="btn btn-primary" type="submit">Save settings</button></div>
       </form>`;
@@ -925,6 +973,182 @@
         await refreshData(); toast('Settings saved');
       } catch (err) { $('#set-error').textContent = err.message; }
     };
+    $('#copy-link').onclick = async () => {
+      try { await navigator.clipboard.writeText(link); toast('Link copied'); }
+      catch { $('#cust-link').select(); toast('Select the link and copy it'); }
+    };
+    loadQr().then((QR) => {
+      const box = $('#qr');
+      if (!box) return;
+      if (!QR) { box.innerHTML = '<span style="color:#555;font-size:12px;text-align:center">QR code needs an internet connection</span>'; return; }
+      box.innerHTML = '';
+      new QR(box, { text: link, width: 264, height: 264, colorDark: '#0D0820', colorLight: '#ffffff', correctLevel: QR.CorrectLevel.M });
+    });
+    $('#qr-download').onclick = () => {
+      const c = $('#qr canvas'), img = $('#qr img');
+      const src = (c && c.toDataURL('image/png')) || (img && img.src);
+      if (!src) return toast('QR code is not ready yet', true);
+      const a = document.createElement('a'); a.href = src; a.download = 'on-the-spot-order-qr.png'; a.click();
+    };
+  }
+
+  let qrPromise = null;
+  function loadQr() {
+    if (window.QRCode) return Promise.resolve(window.QRCode);
+    if (qrPromise) return qrPromise;
+    qrPromise = new Promise((resolve) => {
+      const sc = document.createElement('script');
+      sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+      const t = setTimeout(() => resolve(null), 7000);
+      sc.onload = () => { clearTimeout(t); resolve(window.QRCode || null); };
+      sc.onerror = () => { clearTimeout(t); qrPromise = null; resolve(null); };
+      document.head.appendChild(sc);
+    });
+    return qrPromise;
+  }
+
+  // ================= ONLINE ORDERS =================
+  let ordersTab = 'active';
+  const ORDER_LABEL = { received: 'New', preparing: 'Preparing', ready: 'Ready', picked_up: 'Picked up', cancelled: 'Cancelled' };
+  function waLink(raw, text = '') {
+    let d = String(raw || '').replace(/\D/g, '');
+    if (!d) return '';
+    if (d.startsWith('00')) d = d.slice(2);
+    if (!d.startsWith('961')) d = '961' + d.replace(/^0/, '');
+    return 'https://wa.me/' + d + (text ? '?text=' + encodeURIComponent(text) : '');
+  }
+  function timeAgo(iso) {
+    const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (m < 1) return 'just now';
+    if (m < 60) return m + ' min ago';
+    if (m < 60 * 24) return Math.round(m / 60) + ' h ago';
+    return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  }
+  const fmtBytes = (b) => (b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB');
+
+  async function renderOrders() {
+    $('#view').innerHTML = `
+      <div class="page-head">
+        <div><h1>Online orders</h1><p class="muted">Orders customers send from the website. They pay when they pick up.</p></div>
+        <div class="ord-tabs">
+          <button class="chip" data-otab="active" aria-pressed="${ordersTab === 'active'}">Open orders</button>
+          <button class="chip" data-otab="done" aria-pressed="${ordersTab === 'done'}">Finished</button>
+          <button class="btn btn-sm" id="ord-refresh">Refresh</button>
+        </div>
+      </div>
+      <div id="ord-body"><div class="empty">Loading…</div></div>`;
+    $$('[data-otab]').forEach((b) => (b.onclick = () => { ordersTab = b.dataset.otab; renderOrders(); }));
+    $('#ord-refresh').onclick = () => { renderOrders(); checkOrders(); };
+    let list;
+    try { list = await api('/orders' + (ordersTab === 'done' ? '?view=done' : '')); }
+    catch (err) { $('#ord-body').innerHTML = `<div class="empty">${esc(err.message)}</div>`; return; }
+    if (state.view !== 'orders') return;
+
+    if (ordersTab === 'done') {
+      $('#ord-body').innerHTML = list.length ? `<div class="ord-stack" style="max-width:760px">${list.map(orderCard).join('')}</div>` : `<div class="ord-empty">No finished orders yet.</div>`;
+    } else {
+      const col = (st, title, empty) => {
+        const items = list.filter((o) => o.status === st);
+        return `<section class="ord-col"><h3>${title} <span class="tag ${st === 'received' ? 'tag-low' : st === 'ready' ? 'tag-ok' : ''}">${items.length}</span></h3>
+          <div class="ord-stack">${items.length ? items.map(orderCard).join('') : `<div class="ord-empty">${empty}</div>`}</div></section>`;
+      };
+      $('#ord-body').innerHTML = `<div class="ord-cols">
+        ${col('received', 'New', 'No new orders. Share your order link to get some!')}
+        ${col('preparing', 'Preparing', 'Nothing in progress.')}
+        ${col('ready', 'Ready for pickup', 'Nothing waiting for pickup.')}
+      </div>`;
+    }
+    bindOrderCards(list);
+  }
+
+  function orderCard(o) {
+    const items = o.items || [];
+    const extrasNames = (ids) => { try { return JSON.parse(ids || '[]').map((id) => (state.printExtras.find((e) => e.id === id) || {}).name).filter(Boolean); } catch { return []; } };
+    const actions = {
+      received: `<button class="btn btn-primary btn-sm" data-ost="preparing" data-oid="${o.id}">Start preparing</button><button class="btn btn-sm" data-ost="ready" data-oid="${o.id}">Mark ready</button>`,
+      preparing: `<button class="btn btn-primary btn-sm" data-ost="ready" data-oid="${o.id}">Mark ready</button>`,
+      ready: `<button class="btn btn-primary btn-sm" data-till="${o.id}">Load into till</button><a class="btn btn-sm" style="text-decoration:none" target="_blank" rel="noopener" href="${waLink(o.phone, `Hi ${o.customer_name}, your order #${o.code} is ready at ${state.settings.shop_name || 'On the Spot'}. Total: ${usd(o.total_usd)}.`)}">Remind on WhatsApp</a>`,
+    }[o.status] || '';
+    return `<article class="ord-card ${o.status === 'received' ? 'is-new' : ''}">
+      <div class="ord-top">
+        <div><div class="ord-code">#${esc(o.code)}</div><span class="muted" style="font-size:13px">${timeAgo(o.created_at)}</span></div>
+        <span class="tag ${o.status === 'cancelled' ? 'tag-low' : o.status === 'picked_up' || o.status === 'ready' ? 'tag-ok' : ''}">${ORDER_LABEL[o.status]}</span>
+      </div>
+      <div class="ord-who"><strong>${esc(o.customer_name)}</strong><a href="${waLink(o.phone)}" target="_blank" rel="noopener">${esc(o.phone)} · WhatsApp</a></div>
+      <div class="ord-items">${items.map((i) => i.item_type === 'print' ? `
+        <div class="ord-item"><strong>Print · ${i.pages} pg × ${i.copies}</strong><span class="num">${usd(i.line_total)}</span>
+          <span class="muted" style="grid-column:1/-1">${esc(i.file_name || 'File')} · ${i.color === 'bw' ? 'B&W' : 'Color'} ${esc(i.size)}, ${i.sided === 'single' ? 'single' : 'double'}-sided${extrasNames(i.extras).length ? ' + ' + esc(extrasNames(i.extras).join(', ')) : ''}</span>
+          ${i.file_id && i.file_ok ? `<button class="btn btn-sm" data-file="${i.file_id}" data-forder="${o.id}" data-fname="${esc(i.file_name)}">Download file${i.file_size ? ' · ' + fmtBytes(i.file_size) : ''}</button>` : i.file_id ? '<span class="muted" style="grid-column:1/-1">File removed after 7 days</span>' : ''}
+        </div>` : `
+        <div class="ord-item"><strong>${esc(i.description)} × ${i.qty}</strong><span class="num">${usd(i.line_total)}</span></div>`).join('')}</div>
+      ${o.note ? `<div class="ord-note">${esc(o.note)}</div>` : ''}
+      <div class="ord-total"><span class="muted">To pay at pickup</span><strong class="num">${usd(o.total_usd)}</strong></div>
+      ${['received', 'preparing', 'ready'].includes(o.status) ? `<div class="ord-actions">${actions}<button class="btn btn-ghost btn-sm" data-ost="cancelled" data-oid="${o.id}">Cancel</button></div>` : ''}
+      ${o.status === 'cancelled' && isAdmin() ? `<div class="ord-actions"><button class="btn btn-sm" data-ost="received" data-oid="${o.id}">Reopen</button></div>` : ''}
+    </article>`;
+  }
+
+  function bindOrderCards(list) {
+    $$('[data-ost]').forEach((b) => (b.onclick = async () => {
+      const id = Number(b.dataset.oid), st = b.dataset.ost;
+      const o = list.find((x) => x.id === id);
+      if (st === 'cancelled' && !(await confirmBox(`Cancel order #${o.code}?`, 'Cancel order', true))) return;
+      try {
+        await api(`/orders/${id}/status`, { method: 'PUT', body: { status: st } });
+        toast(st === 'ready' ? `#${o.code} is ready` : st === 'preparing' ? `Preparing #${o.code}` : st === 'cancelled' ? `#${o.code} cancelled` : 'Order updated');
+        checkOrders();
+        if (st === 'ready') tellReady(o);
+        renderOrders();
+      } catch (err) { toast(err.message, true); }
+    }));
+    $$('[data-file]').forEach((b) => (b.onclick = async () => {
+      b.disabled = true;
+      try {
+        const res = await fetch(`/api/orders/${b.dataset.forder}/files/${b.dataset.file}`, { headers: { Authorization: 'Bearer ' + state.token } });
+        if (!res.ok) { let m = 'Could not download the file.'; try { m = (await res.json()).error || m; } catch {} throw new Error(m); }
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob); a.download = b.dataset.fname || 'file';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      } catch (err) { toast(err.message, true); }
+      b.disabled = false;
+    }));
+    $$('[data-till]').forEach((b) => (b.onclick = () => loadOrderIntoTill(list.find((x) => x.id === Number(b.dataset.till)))));
+  }
+
+  function tellReady(o) {
+    const text = `Hi ${o.customer_name}, your order #${o.code} is ready at ${state.settings.shop_name || 'On the Spot'}. Total: ${usd(o.total_usd)}. See you soon!`;
+    const m = openModal(`
+      <div class="modal-head"><h2>Tell ${esc(o.customer_name)} it's ready?</h2><button class="btn btn-ghost btn-sm" data-close>Close</button></div>
+      <p class="muted" style="margin:0">Their order page already shows "Ready for pickup". You can also send a WhatsApp message:</p>
+      <div class="ord-note">${esc(text)}</div>
+      <div class="modal-foot"><button class="btn" data-close>Not now</button><a class="btn btn-primary" style="text-decoration:none" target="_blank" rel="noopener" href="${waLink(o.phone, text)}" id="wa-send">Send on WhatsApp</a></div>`);
+    $('#wa-send', m).addEventListener('click', () => setTimeout(closeModal, 300));
+  }
+
+  async function loadOrderIntoTill(o) {
+    if (state.cart.length && !(await confirmBox('The till already has items. Replace them with this order?', 'Replace', true))) return;
+    const cart = [];
+    const missing = [];
+    for (const i of o.items || []) {
+      if (i.item_type === 'print') {
+        let extras = [];
+        try { extras = JSON.parse(i.extras || '[]').map(Number); } catch {}
+        cart.push({ key: 'print' + i.id, type: 'print', color: i.color, size: i.size, sided: i.sided, pages: i.pages, copies: i.copies, extras });
+      } else {
+        const p = state.products.find((x) => x.id === i.product_id);
+        if (!p) { missing.push(i.description); continue; }
+        cart.push({ key: 'p' + p.id, type: 'product', product_id: p.id, name: p.name, price: num(p.sell_price), qty: i.qty });
+      }
+    }
+    state.cart = cart;
+    state.discount = 0;
+    state.pendingOrder = { id: o.id, code: o.code, name: o.customer_name };
+    saveCart();
+    go('sell');
+    if (missing.length) toast('Not in the product list anymore: ' + missing.join(', '), true);
+    else toast(`Order #${o.code} is in the till. Take the payment.`);
   }
 
   // ================= boot =================
