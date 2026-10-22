@@ -188,8 +188,10 @@ app.get('/api/products', auth, wrap(async (req, res) => {
   res.json(rows);
 }));
 
-app.post('/api/products', auth, adminOnly, wrap(async (req, res) => {
+// owner and cashier can add products; only the owner sets the cost price
+app.post('/api/products', auth, wrap(async (req, res) => {
   const p = cleanProduct(req.body || {});
+  if (req.user.role !== 'admin') p.cost_price = 0;
   const { rows } = await pool.query(
     `INSERT INTO products (name, category_id, barcode, cost_price, sell_price, stock_qty, min_stock)
      VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
