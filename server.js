@@ -84,8 +84,9 @@ app.put('/api/me/password', auth, wrap(async (req, res) => {
 app.get('/api/settings', auth, wrap(async (req, res) => res.json(await getSettings())));
 
 app.put('/api/settings', auth, adminOnly, wrap(async (req, res) => {
-  const allowed = ['shop_name', 'exchange_rate', 'lbp_round', 'receipt_footer'];
+  const allowed = ['shop_name', 'exchange_rate', 'lbp_round', 'receipt_footer', 'online_orders', 'whatsapp_number', 'shop_hours', 'shop_address'];
   const body = req.body || {};
+  if (body.online_orders !== undefined && !['on', 'off'].includes(body.online_orders)) throw fail(400, 'Online orders must be on or off.');
   if (body.exchange_rate !== undefined && !(Number(body.exchange_rate) > 0)) throw fail(400, 'Exchange rate must be a positive number.');
   if (body.lbp_round !== undefined && !(Number(body.lbp_round) >= 1)) throw fail(400, 'LBP rounding must be 1 or more.');
   for (const k of allowed) {
@@ -396,8 +397,264 @@ app.post('/api/sales/:id/void', auth, adminOnly, wrap(async (req, res) => {
   }
 }));
 
+// =====================================================================
+// CUSTOMER SIDE (public, no login): print uploads, shop orders, tracking
+// =====================================================================
+const MAX_FILE_MB = 25;
+const ALLOWED_MIME = /^(application\/pdf|image\/(jpeg|png|webp|heic|heif)|application\/msword|application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation)|application\/vnd\.ms-powerpoint)$/;
+const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+// tiny in-memory rate limit per IP so nobody floods the shop
+const hits = new Map();
+function rateLimit(req, bucket, max, minutes) {
+  const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
+  const key = bucket + ':' + ip;
+  const now = Date.now();
+  const list = (hits.get(key) || []).filter((t) => now - t < minutes * 60000);
+  if (list.length >= max) throw fail(429, 'Too many requests. Please wait a few minutes and try again.');
+  list.push(now);
+  hits.set(key, list);
+  if (hits.size > 5000) hits.clear();
+}
+
+async function onlineEnabled() {
+  const s = await getSettings();
+  if (s.online_orders === 'off') throw fail(403, 'Online orders are paused right now. Please contact the shop.');
+  return s;
+}
+
+const cleanPhone = (p) => String(p || '').replace(/[^\d+]/g, '');
+
+app.get('/api/public/shop', wrap(async (req, res) => {
+  const s = await getSettings();
+  const products = await pool.query(
+    `SELECT p.id, p.name, p.category_id, p.sell_price, (p.stock_qty > 0) AS in_stock, LEAST(p.stock_qty, 99) AS max_qty
+     FROM products p WHERE p.active = TRUE ORDER BY p.name`
+  );
+  const categories = await pool.query(
+    `SELECT c.id, c.name FROM categories c WHERE EXISTS (SELECT 1 FROM products p WHERE p.category_id = c.id AND p.active) ORDER BY c.name`
+  );
+  const prices = await pool.query('SELECT color, size, sided, price_per_page FROM print_prices ORDER BY size, color, sided');
+  const extras = await pool.query('SELECT id, name, price FROM print_extras WHERE active = TRUE ORDER BY name');
+  res.json({
+    shop: {
+      name: s.shop_name, enabled: s.online_orders !== 'off', whatsapp: s.whatsapp_number || '',
+      hours: s.shop_hours || '', address: s.shop_address || '',
+      exchange_rate: Number(s.exchange_rate), lbp_round: Number(s.lbp_round || 1000), max_file_mb: MAX_FILE_MB,
+    },
+    products: products.rows, categories: categories.rows, prices: prices.rows, extras: extras.rows,
+  });
+}));
+
+// 1) customer uploads a file (raw body) -> gets an id + secret key to attach it to an order
+app.post('/api/public/uploads', express.raw({ type: () => true, limit: MAX_FILE_MB + 1 + 'mb' }), wrap(async (req, res) => {
+  await onlineEnabled();
+  rateLimit(req, 'upload', 60, 60);
+  const buf = req.body;
+  if (!Buffer.isBuffer(buf) || !buf.length) throw fail(400, 'The file is empty.');
+  if (buf.length > MAX_FILE_MB * 1024 * 1024) throw fail(400, `Files must be under ${MAX_FILE_MB} MB.`);
+  const mime = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+  if (!ALLOWED_MIME.test(mime)) throw fail(400, 'Send PDF, Word, PowerPoint or photo files.');
+  let name = 'file';
+  try { name = decodeURIComponent(String(req.headers['x-filename'] || 'file')); } catch {}
+  name = name.replace(/[\\/\r\n"]/g, '_').slice(0, 150) || 'file';
+  const key = crypto.randomBytes(16).toString('hex');
+  const { rows } = await pool.query(
+    `INSERT INTO order_files (upload_key, filename, mime, size, data) VALUES ($1,$2,$3,$4, decode($5,'base64')) RETURNING id`,
+    [key, name, mime, buf.length, buf.toString('base64')]
+  );
+  // clear files that were uploaded but never sent with an order
+  await pool.query(`DELETE FROM order_files WHERE order_id IS NULL AND created_at < NOW() - INTERVAL '1 day'`);
+  res.json({ id: rows[0].id, key });
+}));
+
+// 2) customer sends the order
+app.post('/api/public/orders', wrap(async (req, res) => {
+  await onlineEnabled();
+  rateLimit(req, 'order', 10, 60);
+  const { name, phone, note = '', items } = req.body || {};
+  const cname = String(name || '').trim().slice(0, 60);
+  const cphone = cleanPhone(phone);
+  if (cname.length < 2) throw fail(400, 'Please enter your name.');
+  if (cphone.replace('+', '').length < 7 || cphone.length > 16) throw fail(400, 'Please enter a valid phone number.');
+  if (!Array.isArray(items) || !items.length) throw fail(400, 'Your order is empty.');
+  if (items.length > 40) throw fail(400, 'Too many items in one order.');
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const lines = [];
+    for (const it of items) {
+      if (it.type === 'product') {
+        const qty = parseInt(it.qty, 10);
+        if (!(qty > 0 && qty <= 100)) throw fail(400, 'Quantity must be between 1 and 100.');
+        const { rows } = await client.query('SELECT * FROM products WHERE id = $1 AND active = TRUE', [Number(it.product_id)]);
+        const p = rows[0];
+        if (!p) throw fail(400, 'A product in your order is no longer available. Please remove it.');
+        if (p.stock_qty < qty) throw fail(400, p.stock_qty > 0 ? `Only ${p.stock_qty} "${p.name}" left. Please lower the quantity.` : `"${p.name}" is out of stock. Please remove it.`);
+        lines.push({ item_type: 'product', product_id: p.id, description: p.name, qty, line_total: r2(Number(p.sell_price) * qty) });
+      } else if (it.type === 'print') {
+        const pages = parseInt(it.pages, 10);
+        const copies = parseInt(it.copies, 10);
+        if (!(pages > 0 && pages <= 3000)) throw fail(400, 'Pages must be between 1 and 3000.');
+        if (!(copies > 0 && copies <= 500)) throw fail(400, 'Copies must be between 1 and 500.');
+        const f = await client.query('SELECT id, filename FROM order_files WHERE id = $1 AND upload_key = $2 AND order_id IS NULL', [Number(it.file_id), String(it.file_key || '')]);
+        if (!f.rows.length) throw fail(400, 'One of your files did not upload. Please remove it and add it again.');
+        const pr = await client.query('SELECT price_per_page FROM print_prices WHERE color=$1 AND size=$2 AND sided=$3', [it.color, it.size, it.sided]);
+        if (!pr.rows.length) throw fail(400, 'That print option is not available. Please choose another.');
+        let total = pages * copies * Number(pr.rows[0].price_per_page);
+        const extraIds = [];
+        const extraNames = [];
+        for (const eid of Array.isArray(it.extras) ? it.extras.map(Number) : []) {
+          const ex = await client.query('SELECT * FROM print_extras WHERE id = $1 AND active = TRUE', [eid]);
+          if (!ex.rows.length) continue;
+          total += Number(ex.rows[0].price) * copies;
+          extraIds.push(eid); extraNames.push(ex.rows[0].name);
+        }
+        const desc = `${f.rows[0].filename} — ${COLOR_LABEL[it.color]} ${it.size} ${SIDED_LABEL[it.sided]}, ${pages} pg × ${copies}${extraNames.length ? ' + ' + extraNames.join(', ') : ''}`;
+        lines.push({ item_type: 'print', description: desc, qty: copies, line_total: r2(total), color: it.color, size: it.size, sided: it.sided, pages, copies, extras: JSON.stringify(extraIds), file_id: f.rows[0].id });
+      } else throw fail(400, 'Unknown item in your order.');
+    }
+    const total = r2(lines.reduce((s, l) => s + l.line_total, 0));
+
+    // short code staff can read out loud, unique among open orders
+    let code = '';
+    for (let tries = 0; tries < 20; tries++) {
+      code = Array.from(crypto.randomBytes(4)).map((b) => CODE_CHARS[b % CODE_CHARS.length]).join('');
+      const dup = await client.query(`SELECT 1 FROM online_orders WHERE code = $1 AND status NOT IN ('picked_up','cancelled')`, [code]);
+      if (!dup.rows.length) break;
+    }
+    const token = crypto.randomBytes(18).toString('hex');
+    const o = await client.query(
+      'INSERT INTO online_orders (code, token, customer_name, phone, note, total_usd) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+      [code, token, cname, cphone, String(note).trim().slice(0, 500), total]
+    );
+    const orderId = o.rows[0].id;
+    for (const l of lines) {
+      await client.query(
+        `INSERT INTO online_order_items (order_id, item_type, product_id, description, qty, line_total, color, size, sided, pages, copies, extras, file_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        [orderId, l.item_type, l.product_id || null, l.description, l.qty, l.line_total, l.color || null, l.size || null, l.sided || null, l.pages || null, l.copies || null, l.extras || '[]', l.file_id || null]
+      );
+      if (l.file_id) await client.query('UPDATE order_files SET order_id = $1 WHERE id = $2', [orderId, l.file_id]);
+    }
+    await client.query('COMMIT');
+    res.json({ code, token, total_usd: total });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}));
+
+async function publicOrder(token) {
+  const { rows } = await pool.query('SELECT * FROM online_orders WHERE token = $1', [String(token || '')]);
+  if (!rows.length) throw fail(404, 'Order not found. Check your link.');
+  return rows[0];
+}
+
+// 3) customer tracks the order
+app.get('/api/public/orders/:token', wrap(async (req, res) => {
+  const o = await publicOrder(req.params.token);
+  const items = await pool.query('SELECT item_type, description, qty, line_total FROM online_order_items WHERE order_id = $1 ORDER BY id', [o.id]);
+  const s = await getSettings();
+  res.json({
+    code: o.code, status: o.status, name: o.customer_name, total_usd: o.total_usd,
+    created_at: o.created_at, updated_at: o.updated_at, items: items.rows,
+    shop: { name: s.shop_name, whatsapp: s.whatsapp_number || '', hours: s.shop_hours || '', address: s.shop_address || '', exchange_rate: Number(s.exchange_rate), lbp_round: Number(s.lbp_round || 1000) },
+  });
+}));
+
+// customer can cancel only before the shop starts working on it
+app.post('/api/public/orders/:token/cancel', wrap(async (req, res) => {
+  const o = await publicOrder(req.params.token);
+  if (o.status !== 'received') throw fail(400, 'The shop already started this order. Please contact them to cancel.');
+  await pool.query(`UPDATE online_orders SET status = 'cancelled', updated_at = NOW() WHERE id = $1`, [o.id]);
+  res.json({ ok: true });
+}));
+
+// ---------------- staff: online orders ----------------
+const NEXT_STATUS = {
+  received: ['preparing', 'ready', 'cancelled'],
+  preparing: ['ready', 'received', 'cancelled'],
+  ready: ['preparing', 'cancelled'],
+  picked_up: [],
+  cancelled: ['received'],
+};
+
+app.get('/api/orders/new-count', auth, wrap(async (req, res) => {
+  const { rows } = await pool.query(`SELECT COUNT(*)::int AS n, COALESCE(MAX(id),0) AS last_id FROM online_orders WHERE status = 'received'`);
+  res.json(rows[0]);
+}));
+
+app.get('/api/orders', auth, wrap(async (req, res) => {
+  const done = req.query.view === 'done';
+  const { rows } = await pool.query(
+    `SELECT o.id, o.code, o.customer_name, o.phone, o.note, o.status, o.total_usd, o.sale_id, o.created_at, o.updated_at,
+       (SELECT json_agg(json_build_object('id', i.id, 'item_type', i.item_type, 'product_id', i.product_id, 'description', i.description,
+          'qty', i.qty, 'line_total', i.line_total, 'color', i.color, 'size', i.size, 'sided', i.sided, 'pages', i.pages,
+          'copies', i.copies, 'extras', i.extras, 'file_id', i.file_id,
+          'file_name', f.filename, 'file_size', f.size, 'file_ok', (f.data IS NOT NULL)) ORDER BY i.id)
+        FROM online_order_items i LEFT JOIN order_files f ON f.id = i.file_id WHERE i.order_id = o.id) AS items
+     FROM online_orders o
+     WHERE ${done ? `o.status IN ('picked_up','cancelled')` : `o.status IN ('received','preparing','ready')`}
+     ORDER BY ${done ? 'o.updated_at DESC LIMIT 60' : 'o.created_at ASC'}`
+  );
+  res.json(rows);
+}));
+
+app.get('/api/orders/:id/files/:fileId', auth, wrap(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT filename, mime, encode(data, 'base64') AS b64 FROM order_files WHERE id = $1 AND order_id = $2`,
+    [Number(req.params.fileId), Number(req.params.id)]
+  );
+  if (!rows.length || !rows[0].b64) throw fail(404, 'This file was removed. Files are kept for 7 days after an order is finished.');
+  const buf = Buffer.from(rows[0].b64.replace(/\s/g, ''), 'base64');
+  res.setHeader('Content-Type', rows[0].mime);
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(rows[0].filename)}"`);
+  res.setHeader('Content-Length', buf.length);
+  res.end(buf);
+}));
+
+async function purgeOldFiles() {
+  await pool.query(
+    `UPDATE order_files SET data = NULL WHERE data IS NOT NULL AND order_id IN
+       (SELECT id FROM online_orders WHERE status IN ('picked_up','cancelled') AND updated_at < NOW() - INTERVAL '7 days')`
+  );
+}
+
+app.put('/api/orders/:id/status', auth, wrap(async (req, res) => {
+  const status = String((req.body || {}).status || '');
+  const { rows } = await pool.query('SELECT status FROM online_orders WHERE id = $1', [Number(req.params.id)]);
+  if (!rows.length) throw fail(404, 'Order not found.');
+  if (!(NEXT_STATUS[rows[0].status] || []).includes(status)) throw fail(400, `Can't move this order from "${rows[0].status}" to "${status}".`);
+  await pool.query('UPDATE online_orders SET status = $1, handled_by = $2, updated_at = NOW() WHERE id = $3', [status, req.user.id, Number(req.params.id)]);
+  await purgeOldFiles();
+  res.json({ ok: true });
+}));
+
+// called after the till completes the sale for this order
+app.post('/api/orders/:id/complete', auth, wrap(async (req, res) => {
+  const saleId = Number((req.body || {}).sale_id);
+  const sale = await pool.query('SELECT id FROM sales WHERE id = $1 AND voided = FALSE', [saleId]);
+  if (!sale.rows.length) throw fail(400, 'Sale not found.');
+  const { rows } = await pool.query(
+    `UPDATE online_orders SET status = 'picked_up', sale_id = $1, handled_by = $2, updated_at = NOW()
+     WHERE id = $3 AND status IN ('received','preparing','ready') RETURNING id`,
+    [saleId, req.user.id, Number(req.params.id)]
+  );
+  if (!rows.length) throw fail(400, 'This order is already finished.');
+  await purgeOldFiles();
+  res.json({ ok: true });
+}));
+
+// customer pages
+app.get(['/order', '/order/'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'order.html')));
+app.get('/track/:token', (req, res) => res.sendFile(path.join(__dirname, 'public', 'order.html')));
+
 // any other route -> the app
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('*',(req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 const PORT = process.env.PORT || 3000;
 init()
