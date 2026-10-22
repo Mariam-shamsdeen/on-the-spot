@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0D0820">
   <title>On the Spot</title>
+  <link rel="manifest" href="/manifest-till.webmanifest">
+  <link rel="apple-touch-icon" href="/icon-till-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="OTS Till">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -40,6 +46,7 @@
       </label>
       <p class="form-error" id="login-error" role="alert"></p>
       <button class="btn btn-primary btn-block btn-lg" type="submit">Open the till</button>
+      <button class="btn btn-ghost btn-sm install-btn login-install" type="button" id="install-login" hidden>Install the till app on this device</button>
     </form>
   </main>
 
@@ -52,6 +59,7 @@
       </div>
       <nav id="nav" class="nav"></nav>
       <div class="sidebar-foot">
+        <button class="btn btn-ghost btn-sm install-btn" type="button" id="install-side" hidden style="justify-content:flex-start">Install app</button>
         <div class="rate-chip" id="rate-chip" title="Exchange rate used for LBP"></div>
         <div class="me">
           <div>
