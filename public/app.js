@@ -263,9 +263,17 @@
     search.focus();
   }
 
+  // each category gets one of the printer inks: cyan, magenta, yellow, key
+  function catInk(categoryId) {
+    if (!categoryId) return 'k';
+    const ids = state.categories.map((c) => c.id).sort((a, b) => a - b);
+    const i = ids.indexOf(Number(categoryId));
+    return i < 0 ? 'k' : ['c', 'm', 'y', 'k'][i % 4];
+  }
+
   function renderChips() {
     const cats = [{ id: 'all', name: 'All' }, ...state.categories.filter((c) => c.product_count > 0)];
-    $('#sell-chips').innerHTML = cats.map((c) => `<button type="button" class="chip" data-cat="${c.id}" aria-pressed="${String(state.sellCategory) === String(c.id)}">${esc(c.name)}</button>`).join('');
+    $('#sell-chips').innerHTML = cats.map((c) => `<button type="button" class="chip" data-cat="${c.id}" aria-pressed="${String(state.sellCategory) === String(c.id)}">${c.id === 'all' ? '' : `<i class="ink-dot" data-ink="${catInk(c.id)}"></i>`}${esc(c.name)}</button>`).join('');
     $$('#sell-chips .chip').forEach((b) => (b.onclick = () => { state.sellCategory = b.dataset.cat; renderChips(); renderTiles(); }));
   }
 
@@ -283,7 +291,7 @@
       const inCart = state.cart.filter((i) => i.type === 'product' && i.product_id === p.id).reduce((s, i) => s + i.qty, 0);
       const left = p.stock_qty - inCart;
       const low = left <= p.min_stock;
-      return `<button type="button" class="tile" data-id="${p.id}" ${left <= 0 ? 'disabled' : ''}>
+      return `<button type="button" class="tile" data-id="${p.id}" data-ink="${catInk(p.category_id)}" ${left <= 0 ? 'disabled' : ''}>
         <span class="t-name">${esc(p.name)}</span>
         <span class="t-foot"><span class="t-price num">${usd(p.sell_price)}</span><span class="t-stock ${low ? 'low' : ''}">${left <= 0 ? 'Out of stock' : left + ' left'}</span></span>
       </button>`;
