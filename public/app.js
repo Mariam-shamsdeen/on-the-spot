@@ -82,7 +82,7 @@
         </div>`);
       $('[data-no]', m).onclick = () => { closeModal(); resolve(false); };
       $('[data-yes]', m).onclick = () => { closeModal(); resolve(true); };
-      $('[data-yes]', m).focus();
+      setTimeout(() => $('[data-yes]', m).focus(), 150);
     });
   }
 
@@ -146,8 +146,8 @@
   const NAV = [
     { id: 'sell', label: 'Sell', all: true },
     { id: 'sales', label: "Today's sales", all: true },
+    { id: 'products', label: 'Products', all: true },
     { sep: true, admin: true },
-    { id: 'products', label: 'Products', admin: true },
     { id: 'printing', label: 'Printing prices', admin: true },
     { id: 'users', label: 'Staff', admin: true },
     { id: 'settings', label: 'Settings', admin: true },
@@ -240,13 +240,20 @@
     search.addEventListener('input', () => { state.sellSearch = search.value; renderTiles(); });
     search.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
+      e.preventDefault(); // stop the scanner's Enter from also clicking the next button
       const code = search.value.trim();
       if (!code) return;
       const byCode = state.products.find((p) => p.barcode && p.barcode === code);
       const matches = filteredProducts();
       const pick = byCode || (matches.length === 1 ? matches[0] : null);
       if (pick) { addProduct(pick); search.value = ''; state.sellSearch = ''; renderTiles(); }
-      else if (!matches.length) toast('No product matches "' + code + '"', true);
+      else if (!matches.length) {
+        // unknown barcode or name -> offer to add it as a new product
+        const looksLikeBarcode = /^\d{4,}$/.test(code);
+        confirmBox(`No product matches "${code}". Add it as a new product?`, 'Add product').then((yes) => {
+          if (yes) editProduct(null, looksLikeBarcode ? { barcode: code } : { name: code });
+        });
+      }
     });
     $('#cart-clear').onclick = async () => {
       if (!state.cart.length) return;
@@ -595,8 +602,8 @@
   function renderProducts() {
     $('#view').innerHTML = `
       <div class="page-head">
-        <div><h1>Products</h1><p class="muted">What you sell, its price and how many are on the shelf.</p></div>
-        <div class="toolbar"><button class="btn" id="btn-cats">Categories</button><button class="btn btn-primary" id="btn-add-prod">Add product</button></div>
+        <div><h1>Products</h1><p class="muted">${isAdmin() ? 'What you sell, its price and how many are on the shelf.' : 'Add new products here. Only the owner can change or delete them.'}</p></div>
+        <div class="toolbar">${isAdmin() ? '<button class="btn" id="btn-cats">Categories</button>' : ''}<button class="btn btn-primary" id="btn-add-prod">Add product</button></div>
       </div>
       <div class="panel">
         <div class="panel-head"><div class="toolbar">
@@ -607,7 +614,7 @@
         <div class="table-wrap" id="prod-table"></div>
       </div>`;
     $('#btn-add-prod').onclick = () => editProduct();
-    $('#btn-cats').onclick = manageCategories;
+    if (isAdmin()) $('#btn-cats').onclick = manageCategories;
     $('#pf-q').oninput = (e) => { prodFilter.q = e.target.value; drawProductTable(); };
     $('#pf-cat').onchange = (e) => { prodFilter.cat = e.target.value; drawProductTable(); };
     $('#pf-low').onchange = (e) => { prodFilter.low = e.target.checked; drawProductTable(); };
@@ -627,28 +634,37 @@
       return;
     }
     if (!list.length) { $('#prod-table').innerHTML = `<div class="empty">No products match these filters.</div>`; return; }
+    const admin = isAdmin();
     $('#prod-table').innerHTML = `<table>
-      <thead><tr><th>Name</th><th>Category</th><th>Barcode</th><th class="right">Cost</th><th class="right">Price</th><th class="right">Profit</th><th class="right">In stock</th><th></th></tr></thead>
+      <thead><tr><th>Name</th><th>Category</th><th>Barcode</th>${admin ? '<th class="right">Cost</th>' : ''}<th class="right">Price</th>${admin ? '<th class="right">Profit</th>' : ''}<th class="right">In stock</th>${admin ? '<th></th>' : ''}</tr></thead>
       <tbody>${list.map((p) => {
         const low = p.stock_qty <= p.min_stock;
+        const noCost = admin && !num(p.cost_price);
         return `<tr>
           <td><strong>${esc(p.name)}</strong></td>
           <td>${p.category_name ? `<span class="tag tag-grey">${esc(p.category_name)}</span>` : '<span class="muted">—</span>'}</td>
           <td class="num muted">${esc(p.barcode || '—')}</td>
-          <td class="right num">${usd(p.cost_price)}</td>
+          ${admin ? `<td class="right num">${noCost ? '<span class="tag tag-low">Not set</span>' : usd(p.cost_price)}</td>` : ''}
           <td class="right num"><strong>${usd(p.sell_price)}</strong></td>
-          <td class="right num muted">${usd(num(p.sell_price) - num(p.cost_price))}</td>
+          ${admin ? `<td class="right num muted">${noCost ? '—' : usd(num(p.sell_price) - num(p.cost_price))}</td>` : ''}
           <td class="right num"><span class="tag ${low ? 'tag-low' : 'tag-ok'}">${p.stock_qty}</span></td>
-          <td class="right" style="white-space:nowrap"><button class="btn btn-sm" data-stock="${p.id}">+ Stock</button> <button class="btn btn-sm" data-edit="${p.id}">Edit</button></td>
+          ${admin ? `<td class="right" style="white-space:nowrap"><button class="btn btn-sm" data-stock="${p.id}">+ Stock</button> <button class="btn btn-sm" data-edit="${p.id}">Edit</button></td>` : ''}
         </tr>`;
       }).join('')}</tbody></table>`;
     $$('[data-edit]', $('#prod-table')).forEach((b) => (b.onclick = () => editProduct(state.products.find((p) => p.id === Number(b.dataset.edit)))));
     $$('[data-stock]', $('#prod-table')).forEach((b) => (b.onclick = () => addStock(state.products.find((p) => p.id === Number(b.dataset.stock)))));
   }
 
-  function editProduct(p = null) {
+  // after products change, refresh whichever screen is open
+  function afterCatalogChange() {
+    if (state.view === 'products') drawProductTable();
+    else if (state.view === 'sell') { renderChips(); renderTiles(); }
+  }
+
+  function editProduct(p = null, prefill = {}) {
     const isNew = !p;
-    p = p || { name: '', category_id: '', barcode: '', cost_price: '', sell_price: '', stock_qty: '', min_stock: 5 };
+    if (!isNew && !isAdmin()) return;
+    p = p || { name: '', category_id: '', barcode: '', cost_price: '', sell_price: '', stock_qty: '', min_stock: 5, ...prefill };
     const m = openModal(`
       <div class="modal-head"><h2>${isNew ? 'Add product' : 'Edit product'}</h2><button class="btn btn-ghost btn-sm" data-close>Close</button></div>
       <form id="prod-form" style="display:grid;gap:12px">
@@ -658,7 +674,7 @@
           <label>Barcode (optional)<input name="barcode" value="${esc(p.barcode || '')}" placeholder="Scan or type"></label>
         </div>
         <div class="grid-2">
-          <label>Cost price ($)<input name="cost_price" type="number" step="0.01" min="0" value="${p.cost_price}" inputmode="decimal" placeholder="What you pay"></label>
+          ${isAdmin() ? `<label>Cost price ($)<input name="cost_price" type="number" step="0.01" min="0" value="${p.cost_price}" inputmode="decimal" placeholder="What you pay"></label>` : ''}
           <label>Selling price ($)<input name="sell_price" type="number" step="0.01" min="0" value="${p.sell_price}" required inputmode="decimal"></label>
         </div>
         <div class="grid-2">
@@ -678,12 +694,12 @@
       try {
         await api(isNew ? '/products' : '/products/' + p.id, { method: isNew ? 'POST' : 'PUT', body });
         closeModal(); toast(isNew ? 'Product added' : 'Product saved');
-        await reloadCatalog(); drawProductTable();
+        await reloadCatalog(); afterCatalogChange();
       } catch (err) { $('#prod-error', m).textContent = err.message; }
     };
     if (!isNew) $('#prod-del', m).onclick = async () => {
       if (!(await confirmBox(`Delete "${p.name}"? Past sales keep their records.`, 'Delete product', true))) return;
-      try { await api('/products/' + p.id, { method: 'DELETE' }); toast('Product deleted'); await reloadCatalog(); drawProductTable(); }
+      try { await api('/products/' + p.id, { method: 'DELETE' }); toast('Product deleted'); await reloadCatalog(); afterCatalogChange(); }
       catch (err) { toast(err.message, true); }
     };
   }
