@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0C1020">
+  <title>On the Spot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230C1020'/><path d='M16 16 L16 7 A9 9 0 0 1 25 16 Z' fill='%2300AEEF'/><path d='M16 16 L25 16 A9 9 0 0 1 16 25 Z' fill='%23EC008C'/><path d='M16 16 L16 25 A9 9 0 0 1 7 16 Z' fill='%23FFF200'/><path d='M16 16 L7 16 A9 9 0 0 1 16 7 Z' fill='%23FFFFFF'/></svg>">
+</head>
+<body>
+  <!-- Login: a printer feeds out the sign-in sheet -->
+  <main id="login-view" class="login" hidden>
+    <div class="login-stage">
+      <div class="printer" aria-hidden="true">
+        <span class="printer-led"></span>
+        <span class="printer-label">Ready</span>
+        <span class="printer-slot"></span>
+      </div>
+      <div class="feed">
+        <form id="login-form" class="login-card sheet" autocomplete="on">
+          <span class="crop crop-tl" aria-hidden="true"></span>
+          <span class="crop crop-tr" aria-hidden="true"></span>
+          <span class="crop crop-bl" aria-hidden="true"></span>
+          <span class="crop crop-br" aria-hidden="true"></span>
+
+          <div class="press-mark">
+            <span class="brand-dot brand-dot-lg" aria-hidden="true"></span>
+            <h1 class="press-title">
+              <span class="ink-k">On the Spot</span>
+              <span class="ink-layer ink-c" aria-hidden="true">On the Spot</span>
+              <span class="ink-layer ink-m" aria-hidden="true">On the Spot</span>
+              <span class="ink-layer ink-y" aria-hidden="true">On the Spot</span>
+            </h1>
+            <p class="press-sub">Stationery &amp; printing</p>
+          </div>
+
+          <label>Username
+            <input name="username" autocomplete="username" required autofocus>
+          </label>
+          <label>Password
+            <input name="password" type="password" autocomplete="current-password" required>
+          </label>
+          <p class="form-error" id="login-error" role="alert"></p>
+          <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+
+          <div class="color-bar" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <!-- App -->
+  <div id="app-view" class="shell" hidden>
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-dot" aria-hidden="true"></span>
+        <span id="shop-name">On the Spot</span>
+      </div>
+      <nav id="nav" class="nav"></nav>
+      <div class="sidebar-foot">
+        <div class="rate-chip" id="rate-chip" title="Exchange rate used for LBP"></div>
+        <div class="me">
+          <div>
+            <strong id="me-name"></strong>
+            <span class="muted" id="me-role"></span>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="btn-password" type="button">Password</button>
+          <button class="btn btn-ghost btn-sm" id="btn-logout" type="button">Sign out</button>
+        </div>
+      </div>
+    </aside>
+    <main id="view" class="view"></main>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
