@@ -567,3 +567,11 @@ body.customer.has-bar { padding-bottom: 110px; }
 .link-row input { font-size: 14px; }
 @media (max-width: 1100px) { .ord-cols { grid-template-columns: 1fr; } }
 @media (max-width: 600px) { .share-box { grid-template-columns: 1fr; } }
+
+/* install as app */
+.ios-steps { margin: 0; padding-left: 22px; display: grid; gap: 12px; font-size: 16px; }
+.ios-share { display: inline-block; width: 18px; height: 20px; vertical-align: -3px; margin: 0 2px;
+  background: no-repeat center/contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 28' fill='none' stroke='%234D8BFF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2v15M7 7l5-5 5 5'/%3E%3Cpath d='M5 12H3v14h18V12h-2'/%3E%3C/svg%3E"); }
+.install-btn { gap: 8px; }
+.install-btn::before { content: ""; width: 16px; height: 16px; border-radius: 5px; background: var(--grad-d); flex: none; }
+.login-install { justify-self: center; margin-top: -4px; }
