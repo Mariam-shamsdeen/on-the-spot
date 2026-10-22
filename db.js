@@ -109,6 +109,49 @@ CREATE TABLE IF NOT EXISTS settings (
 
 CREATE INDEX IF NOT EXISTS idx_sales_created ON sales(created_at);
 CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(sale_id);
+
+-- ---------- customer side: online orders ----------
+CREATE TABLE IF NOT EXISTS online_orders (
+  id SERIAL PRIMARY KEY,
+  code TEXT NOT NULL,
+  token TEXT NOT NULL UNIQUE,
+  customer_name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'received' CHECK (status IN ('received','preparing','ready','picked_up','cancelled')),
+  total_usd NUMERIC(12,2) NOT NULL DEFAULT 0,
+  sale_id INTEGER REFERENCES sales(id) ON DELETE SET NULL,
+  handled_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS order_files (
+  id SERIAL PRIMARY KEY,
+  order_id INTEGER REFERENCES online_orders(id) ON DELETE CASCADE,
+  upload_key TEXT NOT NULL,
+  filename TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  data BYTEA,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS online_order_items (
+  id SERIAL PRIMARY KEY,
+  order_id INTEGER NOT NULL REFERENCES online_orders(id) ON DELETE CASCADE,
+  item_type TEXT NOT NULL CHECK (item_type IN ('product','print')),
+  product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+  description TEXT NOT NULL,
+  qty INTEGER NOT NULL,
+  line_total NUMERIC(12,2) NOT NULL,
+  color TEXT, size TEXT, sided TEXT, pages INTEGER, copies INTEGER,
+  extras TEXT NOT NULL DEFAULT '[]',
+  file_id INTEGER REFERENCES order_files(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_status ON online_orders(status);
+CREATE INDEX IF NOT EXISTS idx_order_items_order ON online_order_items(order_id);
 `;
 
 async function init() {
@@ -120,6 +163,10 @@ async function init() {
     exchange_rate: '89500',
     lbp_round: '1000',
     receipt_footer: 'Thank you for shopping with us!',
+    online_orders: 'on',
+    whatsapp_number: '',
+    shop_hours: '',
+    shop_address: '',
   };
   for (const [k, v] of Object.entries(defaults)) {
     await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING', [k, v]);
