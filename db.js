@@ -107,6 +107,10 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT NOT NULL
 );
 
+ALTER TABLE products ADD COLUMN IF NOT EXISTS image BYTEA;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS image_mime TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS image_v INTEGER NOT NULL DEFAULT 0;
+
 CREATE INDEX IF NOT EXISTS idx_sales_created ON sales(created_at);
 CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(sale_id);
 
@@ -180,6 +184,25 @@ async function init() {
       ['Shop owner', 'admin', hashPassword('admin123'), 'admin']
     );
     console.log('Created first admin account -> username: admin  password: admin123  (change it after logging in)');
+  }
+
+  // forgot the owner password? set RESET_ADMIN_PASSWORD on Render, deploy, log in, then remove it
+  const reset = process.env.RESET_ADMIN_PASSWORD;
+  if (reset) {
+    if (String(reset).length < 6) {
+      console.log('RESET_ADMIN_PASSWORD must be at least 6 characters. Nothing was changed.');
+    } else {
+      const r = await pool.query(
+        `UPDATE users SET password_hash = $1, active = TRUE, role = 'admin'
+         WHERE id = (SELECT id FROM users WHERE LOWER(username) = 'admin' OR role = 'admin' ORDER BY (LOWER(username) = 'admin') DESC, id LIMIT 1)
+         RETURNING username`,
+        [hashPassword(String(reset))]
+      );
+      if (r.rows.length) {
+        await pool.query('DELETE FROM sessions WHERE user_id = (SELECT id FROM users WHERE username = $1)', [r.rows[0].username]);
+        console.log(`Owner password was reset for username "${r.rows[0].username}". Remove RESET_ADMIN_PASSWORD from Render now.`);
+      }
+    }
   }
 
   // default print prices (owner edits them later)

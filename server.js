@@ -180,7 +180,7 @@ function cleanProduct(b) {
 
 app.get('/api/products', auth, wrap(async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT p.*, c.name AS category_name FROM products p
+    `SELECT p.id, p.name, p.category_id, p.barcode, p.cost_price, p.sell_price, p.stock_qty, p.min_stock, p.image_v, c.name AS category_name FROM products p
      LEFT JOIN categories c ON c.id = p.category_id
      WHERE p.active = TRUE ORDER BY p.name`
   );
@@ -195,7 +195,7 @@ app.post('/api/products', auth, wrap(async (req, res) => {
   if (req.user.role !== 'admin') p.cost_price = 0;
   const { rows } = await pool.query(
     `INSERT INTO products (name, category_id, barcode, cost_price, sell_price, stock_qty, min_stock)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, name, category_id, barcode, cost_price, sell_price, stock_qty, min_stock, active, created_at, image_v`,
     [p.name, p.category_id, p.barcode, p.cost_price, p.sell_price, p.stock_qty, p.min_stock]
   );
   res.json(rows[0]);
@@ -205,7 +205,7 @@ app.put('/api/products/:id', auth, adminOnly, wrap(async (req, res) => {
   const p = cleanProduct(req.body || {});
   const { rows } = await pool.query(
     `UPDATE products SET name=$1, category_id=$2, barcode=$3, cost_price=$4, sell_price=$5, stock_qty=$6, min_stock=$7
-     WHERE id=$8 RETURNING *`,
+     WHERE id=$8 RETURNING id, name, category_id, barcode, cost_price, sell_price, stock_qty, min_stock, active, created_at, image_v`,
     [p.name, p.category_id, p.barcode, p.cost_price, p.sell_price, p.stock_qty, p.min_stock, Number(req.params.id)]
   );
   if (!rows.length) throw fail(404, 'Product not found.');
@@ -216,6 +216,42 @@ app.put('/api/products/:id', auth, adminOnly, wrap(async (req, res) => {
 app.delete('/api/products/:id', auth, adminOnly, wrap(async (req, res) => {
   await pool.query('UPDATE products SET active = FALSE, barcode = NULL WHERE id = $1', [Number(req.params.id)]);
   res.json({ ok: true });
+}));
+
+// ---------------- product photos ----------------
+// owner can add/replace/remove; cashier can add a photo only when the product has none yet
+const MAX_IMAGE_KB = 1500;
+app.put('/api/products/:id/image', auth, express.raw({ type: () => true, limit: '2mb' }), wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const mime = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+  if (!/^image\/(jpeg|png|webp)$/.test(mime)) throw fail(400, 'Use a JPG, PNG or WebP photo.');
+  const buf = req.body;
+  if (!Buffer.isBuffer(buf) || !buf.length) throw fail(400, 'The photo is empty.');
+  if (buf.length > MAX_IMAGE_KB * 1024) throw fail(400, 'The photo is too big. Try another one.');
+  const { rows } = await pool.query('SELECT image_v FROM products WHERE id = $1 AND active = TRUE', [id]);
+  if (!rows.length) throw fail(404, 'Product not found.');
+  if (req.user.role !== 'admin' && rows[0].image_v > 0) throw fail(403, 'Only the owner can change a photo.');
+  const r = await pool.query(
+    `UPDATE products SET image = decode($1, 'base64'), image_mime = $2, image_v = image_v + 1 WHERE id = $3 RETURNING image_v`,
+    [buf.toString('base64'), mime, id]
+  );
+  res.json({ image_v: r.rows[0].image_v });
+}));
+
+app.delete('/api/products/:id/image', auth, adminOnly, wrap(async (req, res) => {
+  await pool.query('UPDATE products SET image = NULL, image_mime = NULL, image_v = 0 WHERE id = $1', [Number(req.params.id)]);
+  res.json({ ok: true });
+}));
+
+// public: photos are shown on the customer page too (cached by version number)
+app.get('/api/products/:id/image', wrap(async (req, res) => {
+  const { rows } = await pool.query(`SELECT image_mime, encode(image, 'base64') AS b64 FROM products WHERE id = $1 AND image IS NOT NULL`, [Number(req.params.id)]);
+  if (!rows.length || !rows[0].b64) { res.status(404); return res.end(); }
+  const buf = Buffer.from(rows[0].b64.replace(/\s/g, ''), 'base64');
+  res.setHeader('Content-Type', rows[0].image_mime);
+  res.setHeader('Cache-Control', req.query.v ? 'public, max-age=31536000, immutable' : 'public, max-age=300');
+  res.setHeader('Content-Length', buf.length);
+  res.end(buf);
 }));
 
 // ---------------- printing prices ----------------
@@ -286,7 +322,7 @@ app.post('/api/sales', auth, wrap(async (req, res) => {
       if (it.type === 'product') {
         const qty = parseInt(it.qty, 10);
         if (!(qty > 0)) throw fail(400, 'Quantity must be at least 1.');
-        const { rows } = await client.query('SELECT * FROM products WHERE id = $1 AND active = TRUE FOR UPDATE', [Number(it.product_id)]);
+        const { rows } = await client.query('SELECT id, name, sell_price, cost_price, stock_qty FROM products WHERE id = $1 AND active = TRUE FOR UPDATE', [Number(it.product_id)]);
         const p = rows[0];
         if (!p) throw fail(400, 'A product in the cart no longer exists. Remove it and try again.');
         if (p.stock_qty < qty) throw fail(400, `Not enough "${p.name}" in stock (${p.stock_qty} left). Ask the owner to update the stock.`);
@@ -428,7 +464,7 @@ const cleanPhone = (p) => String(p || '').replace(/[^\d+]/g, '');
 app.get('/api/public/shop', wrap(async (req, res) => {
   const s = await getSettings();
   const products = await pool.query(
-    `SELECT p.id, p.name, p.category_id, p.sell_price, (p.stock_qty > 0) AS in_stock, LEAST(p.stock_qty, 99) AS max_qty
+    `SELECT p.id, p.name, p.category_id, p.sell_price, p.image_v, (p.stock_qty > 0) AS in_stock, LEAST(p.stock_qty, 99) AS max_qty
      FROM products p WHERE p.active = TRUE ORDER BY p.name`
   );
   const categories = await pool.query(
@@ -488,7 +524,7 @@ app.post('/api/public/orders', wrap(async (req, res) => {
       if (it.type === 'product') {
         const qty = parseInt(it.qty, 10);
         if (!(qty > 0 && qty <= 100)) throw fail(400, 'Quantity must be between 1 and 100.');
-        const { rows } = await client.query('SELECT * FROM products WHERE id = $1 AND active = TRUE', [Number(it.product_id)]);
+        const { rows } = await client.query('SELECT id, name, sell_price, stock_qty FROM products WHERE id = $1 AND active = TRUE', [Number(it.product_id)]);
         const p = rows[0];
         if (!p) throw fail(400, 'A product in your order is no longer available. Please remove it.');
         if (p.stock_qty < qty) throw fail(400, p.stock_qty > 0 ? `Only ${p.stock_qty} "${p.name}" left. Please lower the quantity.` : `"${p.name}" is out of stock. Please remove it.`);
