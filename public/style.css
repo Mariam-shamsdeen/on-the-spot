@@ -575,3 +575,26 @@ body.customer.has-bar { padding-bottom: 110px; }
 .install-btn { gap: 8px; }
 .install-btn::before { content: ""; width: 16px; height: 16px; border-radius: 5px; background: var(--grad-d); flex: none; }
 .login-install { justify-self: center; margin-top: -4px; }
+
+/* ---------- product photos ---------- */
+.photo-row { display: grid; grid-template-columns: 96px 1fr; gap: 14px; align-items: center; padding: 12px; border-radius: 18px; background: rgba(255,255,255,.04); border: 1px solid var(--line); }
+.photo-box { width: 96px; height: 96px; border-radius: 18px; overflow: hidden; background: rgba(255,255,255,.07); display: grid; place-items: center; }
+.photo-box img { width: 100%; height: 100%; object-fit: cover; }
+.photo-empty { width: 34px; height: 34px; opacity: .55; background: no-repeat center/contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 7h3l2-3h6l2 3h3v13H4z'/%3E%3Ccircle cx='12' cy='13' r='4'/%3E%3C/svg%3E"); }
+.photo-actions { display: grid; gap: 6px; }
+.photo-actions .toolbar { gap: 6px; }
+.pt-name { display: flex; align-items: center; gap: 10px; }
+.pt-thumb { width: 38px; height: 38px; border-radius: 10px; object-fit: cover; flex: none; background: #fff; }
+.pt-none { background: rgba(255,255,255,.06); }
+.tile .t-img { position: absolute; top: 12px; right: 12px; width: 48px; height: 48px; border-radius: 12px; object-fit: cover; background: #fff; box-shadow: 0 8px 18px -8px rgba(0,0,0,.6); }
+.tile:has(.t-img) .t-name { padding-right: 54px; }
+.c-prod { padding: 0 0 12px; gap: 8px; overflow: hidden; }
+.c-prod .t-name, .c-prod .t-foot { padding: 0 14px; }
+.c-img { aspect-ratio: 4 / 3; background: rgba(255,255,255,.95); display: grid; place-items: center; overflow: hidden; }
+.c-img img { width: 100%; height: 100%; object-fit: cover; }
+.c-img .c-img-none { display: grid; place-items: center; width: 100%; height: 100%; background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--cat, var(--violet)) 35%, transparent), rgba(255,255,255,.03) 70%); }
+.c-img:has(.c-img-none) { background: rgba(255,255,255,.04); }
+.c-img-none svg { width: auto; height: 50%; max-width: 62%; transform: rotate(-12deg); filter: drop-shadow(0 12px 12px rgba(0,0,0,.4)); }
+@media (max-width: 520px) { .c-prod { padding: 0 0 10px; } .c-prod .t-name, .c-prod .t-foot { padding: 0 10px; } }
+.c-img { position: relative; }
+.c-img .c-img-none { position: absolute; inset: 0; }

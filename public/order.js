@@ -330,6 +330,16 @@
     $$('#c-cats .chip').forEach((b) => (b.onclick = () => { S.cat = b.dataset.cat; renderShop(); }));
     drawProducts();
   }
+  // a matching 3D drawing when a product has no photo yet
+  function guessObj(name) {
+    const n = String(name).toLowerCase();
+    if (/pencil|crayon|colou?r/.test(n)) return 'pencil';
+    if (/pen|marker|highlight/.test(n)) return 'pen';
+    if (/eraser|gomme/.test(n)) return 'eraser';
+    if (/paper|sheet|a4|card|envelope/.test(n)) return 'sheet';
+    if (/clip|stapl|pin/.test(n)) return 'clip';
+    return 'notebook';
+  }
   function drawProducts() {
     const q = S.q.trim().toLowerCase();
     const inkOf = (cid) => { const i = S.categories.findIndex((c) => c.id === cid); return i < 0 ? 'k' : ['c', 'm', 'y', 'k'][i % 4]; };
@@ -337,6 +347,7 @@
     $('#c-grid').innerHTML = list.length ? list.map((p) => {
       const qty = S.cart[p.id] || 0;
       return `<div class="tile c-prod" data-ink="${inkOf(p.category_id)}">
+        <div class="c-img">${p.image_v ? `<img src="/api/products/${p.id}/image?v=${p.image_v}" alt="${esc(p.name)}" loading="lazy">` : `<span class="c-img-none" aria-hidden="true">${objSvg(guessObj(p.name))}</span>`}</div>
         <span class="t-name">${esc(p.name)}</span>
         <span class="t-foot"><span class="t-price num">${usd(p.sell_price)}</span>
         ${!p.in_stock ? '<span class="t-stock">Out of stock</span>'

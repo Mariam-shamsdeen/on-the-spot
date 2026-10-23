@@ -339,6 +339,7 @@
       const left = p.stock_qty - inCart;
       const low = left <= p.min_stock;
       return `<button type="button" class="tile" data-id="${p.id}" data-ink="${catInk(p.category_id)}" ${left <= 0 ? 'disabled' : ''}>
+        ${p.image_v ? `<img class="t-img" src="${productImg(p)}" alt="" loading="lazy">` : ''}
         <span class="t-name">${esc(p.name)}</span>
         <span class="t-foot"><span class="t-price num">${usd(p.sell_price)}</span><span class="t-stock ${low ? 'low' : ''}">${left <= 0 ? 'Out of stock' : left + ' left'}</span></span>
       </button>`;
@@ -705,7 +706,7 @@
         const low = p.stock_qty <= p.min_stock;
         const noCost = admin && !num(p.cost_price);
         return `<tr>
-          <td><strong>${esc(p.name)}</strong></td>
+          <td><span class="pt-name">${p.image_v ? `<img class="pt-thumb" src="${productImg(p)}" alt="" loading="lazy">` : '<span class="pt-thumb pt-none" aria-hidden="true"></span>'}<strong>${esc(p.name)}</strong></span></td>
           <td>${p.category_name ? `<span class="tag tag-grey">${esc(p.category_name)}</span>` : '<span class="muted">—</span>'}</td>
           <td class="num muted">${esc(p.barcode || '—')}</td>
           ${admin ? `<td class="right num">${noCost ? '<span class="tag tag-low">Not set</span>' : usd(p.cost_price)}</td>` : ''}
@@ -719,6 +720,20 @@
     $$('[data-stock]', $('#prod-table')).forEach((b) => (b.onclick = () => addStock(state.products.find((p) => p.id === Number(b.dataset.stock)))));
   }
 
+  // product photos
+  const productImg = (p) => `/api/products/${p.id}/image?v=${p.image_v}`;
+  async function shrinkImage(file, max = 800) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = url; });
+      const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+      const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+      return await new Promise((ok, bad) => c.toBlob((b) => (b ? ok(b) : bad()), 'image/jpeg', 0.84));
+    } finally { URL.revokeObjectURL(url); }
+  }
+
   // after products change, refresh whichever screen is open
   function afterCatalogChange() {
     if (state.view === 'products') drawProductTable();
@@ -728,10 +743,25 @@
   function editProduct(p = null, prefill = {}) {
     const isNew = !p;
     if (!isNew && !isAdmin()) return;
-    p = p || { name: '', category_id: '', barcode: '', cost_price: '', sell_price: '', stock_qty: '', min_stock: 5, ...prefill };
+    p = p || { name: '', category_id: '', barcode: '', cost_price: '', sell_price: '', stock_qty: '', min_stock: 5, image_v: 0, ...prefill };
+    const canPhoto = isAdmin() || !p.image_v;
+    let newPhoto = null;      // resized Blob waiting to upload
+    let removePhoto = false;
     const m = openModal(`
       <div class="modal-head"><h2>${isNew ? 'Add product' : 'Edit product'}</h2><button class="btn btn-ghost btn-sm" data-close>Close</button></div>
       <form id="prod-form" style="display:grid;gap:12px">
+        <div class="photo-row">
+          <div class="photo-box" id="photo-box">${p.image_v ? `<img src="${productImg(p)}" alt="">` : '<span class="photo-empty" aria-hidden="true"></span>'}</div>
+          <div class="photo-actions">
+            <strong>Product photo</strong>
+            <span class="muted" style="font-size:13px">${canPhoto ? 'Customers see it when they shop online.' : 'Only the owner can change this photo.'}</span>
+            ${canPhoto ? `<div class="toolbar">
+              <label class="btn btn-sm" style="cursor:pointer">${p.image_v ? 'Change photo' : 'Add photo'}<input type="file" id="photo-input" accept="image/*" hidden></label>
+              <label class="btn btn-sm" style="cursor:pointer">Take photo<input type="file" id="photo-cam" accept="image/*" capture="environment" hidden></label>
+              ${p.image_v && isAdmin() ? '<button class="btn btn-ghost btn-sm" type="button" id="photo-remove">Remove</button>' : ''}
+            </div>` : ''}
+          </div>
+        </div>
         <label>Name<input name="name" value="${esc(p.name)}" required placeholder="Copybook 100 pages"></label>
         <div class="grid-2">
           <label>Category<select name="category_id"><option value="">No category</option>${state.categories.map((c) => `<option value="${c.id}" ${String(p.category_id) === String(c.id) ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
@@ -752,14 +782,35 @@
         </div>
       </form>`);
     $$('[data-close]', m).forEach((b) => (b.onclick = closeModal));
+    const onPick = async (input) => {
+      const f = input.files && input.files[0];
+      input.value = '';
+      if (!f) return;
+      try {
+        newPhoto = await shrinkImage(f);
+        removePhoto = false;
+        $('#photo-box', m).innerHTML = `<img src="${URL.createObjectURL(newPhoto)}" alt="">`;
+      } catch { toast("Couldn't read that photo. Try a JPG or PNG.", true); }
+    };
+    if ($('#photo-input', m)) $('#photo-input', m).onchange = (e) => onPick(e.target);
+    if ($('#photo-cam', m)) $('#photo-cam', m).onchange = (e) => onPick(e.target);
+    if ($('#photo-remove', m)) $('#photo-remove', m).onclick = () => { removePhoto = true; newPhoto = null; $('#photo-box', m).innerHTML = '<span class="photo-empty" aria-hidden="true"></span>'; };
     $('#prod-form', m).onsubmit = async (e) => {
       e.preventDefault();
       const body = Object.fromEntries(new FormData(e.target));
+      const btn = $('button[type=submit]', e.target);
+      btn.disabled = true;
       try {
-        await api(isNew ? '/products' : '/products/' + p.id, { method: isNew ? 'POST' : 'PUT', body });
+        const saved = await api(isNew ? '/products' : '/products/' + p.id, { method: isNew ? 'POST' : 'PUT', body });
+        if (newPhoto) {
+          const res = await fetch(`/api/products/${saved.id}/image`, { method: 'PUT', headers: { 'Content-Type': newPhoto.type, Authorization: 'Bearer ' + state.token }, body: newPhoto });
+          if (!res.ok) { let msg = 'The photo was not saved.'; try { msg = (await res.json()).error || msg; } catch {} toast('Product saved, but: ' + msg, true); }
+        } else if (removePhoto) {
+          await api(`/products/${saved.id}/image`, { method: 'DELETE' });
+        }
         closeModal(); toast(isNew ? 'Product added' : 'Product saved');
         await reloadCatalog(); afterCatalogChange();
-      } catch (err) { $('#prod-error', m).textContent = err.message; }
+      } catch (err) { $('#prod-error', m).textContent = err.message; btn.disabled = false; }
     };
     if (!isNew) $('#prod-del', m).onclick = async () => {
       if (!(await confirmBox(`Delete "${p.name}"? Past sales keep their records.`, 'Delete product', true))) return;
