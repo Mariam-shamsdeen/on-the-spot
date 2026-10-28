@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#FFFFFF">
+  <title>On the Spot — Order online</title>
+  <link rel="manifest" href="/manifest-order.webmanifest">
+  <link rel="apple-touch-icon" href="/icon-order-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="On the Spot">
+  <meta name="description" content="Send your files to print and order stationery from On the Spot. Pick it up ready.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%23E11D2E'/><circle cx='16' cy='16' r='5.5' fill='white'/></svg>">
+</head>
+<body class="customer">
+  <div class="scene" id="scene" aria-hidden="true">
+    <span class="obj" data-obj="pencil"   style="--x:-6%; --y:4%;  --r:-28deg; --s:.8;  --d:7s;  --z:1.4"></span>
+    <span class="obj" data-obj="notebook" style="--x:80%; --y:2%;  --r:14deg;  --s:.75; --d:9s;  --z:1"></span>
+    <span class="obj" data-obj="plane"    style="--x:70%; --y:80%; --r:-10deg; --s:.8;  --d:6s;  --z:1.8"></span>
+    <span class="obj" data-obj="pen"      style="--x:2%;  --y:70%; --r:22deg;  --s:.8;  --d:7.5s;--z:1.6"></span>
+  </div>
+
+  <header class="c-top">
+    <a class="brand" href="/order">
+      <span class="logo-mark logo-sm" aria-hidden="true"></span>
+      <span id="c-shop-name">On the Spot</span>
+    </a>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-ghost btn-sm install-btn" id="c-install" type="button" hidden>Install app</button>
+      <button class="btn btn-ghost btn-sm" id="c-my-orders" type="button" hidden>My orders</button>
+    </div>
+  </header>
+
+  <main id="c-view" class="c-wrap"></main>
+
+  <div class="c-bar" id="c-bar" hidden>
+    <button class="btn btn-charge btn-block" id="c-bar-btn" type="button"></button>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="/objects.js"></script>
+  <script src="/order.js"></script>
+</body>
+</html>

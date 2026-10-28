@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#FFFFFF">
+  <title>On the Spot</title>
+  <link rel="manifest" href="/manifest-till.webmanifest">
+  <link rel="apple-touch-icon" href="/icon-till-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="OTS Till">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%23E11D2E'/><circle cx='16' cy='16' r='5.5' fill='white'/></svg>">
+</head>
+<body>
+  <!-- floating stationery, shared by login and app -->
+  <div class="scene" id="scene" aria-hidden="true">
+    <span class="obj" data-obj="pencil"  style="--x:4%;  --y:7%;  --r:-28deg; --s:1;    --d:7s;  --z:1.6"></span>
+    <span class="obj" data-obj="notebook" style="--x:78%; --y:4%;  --r:14deg;  --s:1;    --d:9s;  --z:1.1"></span>
+    <span class="obj" data-obj="plane"   style="--x:40%; --y:76%; --r:-10deg; --s:1;    --d:6s;  --z:2"></span>
+    <span class="obj" data-obj="sheet"   style="--x:84%; --y:64%; --r:-18deg; --s:.95;  --d:8s;  --z:1.3"></span>
+    <span class="obj" data-obj="pen"     style="--x:3%;  --y:62%; --r:22deg;  --s:1;    --d:7.5s;--z:1.8"></span>
+    <span class="obj obj-far" data-obj="eraser" style="--x:56%; --y:6%; --r:24deg; --s:.7; --d:10s; --z:.6"></span>
+    <span class="obj obj-far" data-obj="clip"   style="--x:28%; --y:30%; --r:-36deg; --s:.6; --d:11s; --z:.5"></span>
+  </div>
+
+  <!-- Login -->
+  <main id="login-view" class="login" hidden>
+    <section class="login-hero">
+      <div class="logo-mark" aria-hidden="true"></div>
+      <h1 class="hero-title">On the <span class="grad-text">Spot</span></h1>
+      <p class="hero-sub">Copybooks, pens, printing. Everything for school, in one till.</p>
+    </section>
+    <form id="login-form" class="login-card glass" autocomplete="on">
+      <h2>Sign in</h2>
+      <label>Username
+        <input name="username" autocomplete="username" required autofocus>
+      </label>
+      <label>Password
+        <input name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <p class="form-error" id="login-error" role="alert"></p>
+      <button class="btn btn-primary btn-block btn-lg" type="submit">Open the till</button>
+      <button class="btn btn-ghost btn-sm install-btn login-install" type="button" id="install-login" hidden>Install the till app on this device</button>
+    </form>
+  </main>
+
+  <!-- App -->
+  <div id="app-view" class="shell" hidden>
+    <aside class="sidebar glass">
+      <div class="brand">
+        <span class="logo-mark logo-sm" aria-hidden="true"></span>
+        <span id="shop-name">On the Spot</span>
+      </div>
+      <nav id="nav" class="nav"></nav>
+      <div class="sidebar-foot">
+        <button class="btn btn-ghost btn-sm install-btn" type="button" id="install-side" hidden style="justify-content:flex-start">Install app</button>
+        <div class="rate-chip" id="rate-chip" title="Exchange rate used for LBP"></div>
+        <div class="me">
+          <div>
+            <strong id="me-name"></strong>
+            <span class="muted" id="me-role"></span>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="btn-password" type="button">Password</button>
+          <button class="btn btn-ghost btn-sm" id="btn-logout" type="button">Sign out</button>
+        </div>
+      </div>
+    </aside>
+    <main id="view" class="view"></main>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="/objects.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
