@@ -1,5 +1,5 @@
 // On the Spot — service worker: makes the site installable, keeps the look offline
-const VERSION = 'ots-v1';
+const VERSION = 'ots-v2';
 const SHELL = ['/style.css', '/objects.js', '/app.js', '/order.js', '/offline.html',
   '/icon-order-192.png', '/icon-till-192.png'];
 
