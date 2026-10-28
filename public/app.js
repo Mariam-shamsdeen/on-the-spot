@@ -1126,7 +1126,7 @@
     return `<article class="ord-card ${o.status === 'received' ? 'is-new' : ''}">
       <div class="ord-top">
         <div><div class="ord-code">#${esc(o.code)}</div><span class="muted" style="font-size:13px">${timeAgo(o.created_at)}</span></div>
-        <span class="tag ${o.status === 'cancelled' ? 'tag-low' : o.status === 'picked_up' || o.status === 'ready' ? 'tag-ok' : ''}">${ORDER_LABEL[o.status]}</span>
+        <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${o.customer_edited && ['received', 'preparing', 'ready'].includes(o.status) ? '<span class="tag tag-low">Edited by customer</span>' : ''}<span class="tag ${o.status === 'cancelled' ? 'tag-low' : o.status === 'picked_up' || o.status === 'ready' ? 'tag-ok' : ''}">${ORDER_LABEL[o.status]}</span></span>
       </div>
       <div class="ord-who"><strong>${esc(o.customer_name)}</strong><a href="${waLink(o.phone)}" target="_blank" rel="noopener">${esc(o.phone)} · WhatsApp</a></div>
       <div class="ord-items">${items.map((i) => i.item_type === 'print' ? `
@@ -1137,7 +1137,7 @@
         <div class="ord-item"><strong>${esc(i.description)} × ${i.qty}</strong><span class="num">${usd(i.line_total)}</span></div>`).join('')}</div>
       ${o.note ? `<div class="ord-note">${esc(o.note)}</div>` : ''}
       <div class="ord-total"><span class="muted">To pay at pickup</span><strong class="num">${usd(o.total_usd)}</strong></div>
-      ${['received', 'preparing', 'ready'].includes(o.status) ? `<div class="ord-actions">${actions}<button class="btn btn-ghost btn-sm" data-ost="cancelled" data-oid="${o.id}">Cancel</button></div>` : ''}
+      ${['received', 'preparing', 'ready'].includes(o.status) ? `<div class="ord-actions">${actions}</div><div class="ord-actions"><button class="btn btn-sm" data-oedit="${o.id}">Edit items</button><button class="btn btn-ghost btn-sm" data-ost="cancelled" data-oid="${o.id}">Cancel order</button></div>` : ''}
       ${o.status === 'cancelled' && isAdmin() ? `<div class="ord-actions"><button class="btn btn-sm" data-ost="received" data-oid="${o.id}">Reopen</button></div>` : ''}
     </article>`;
   }
@@ -1169,6 +1169,53 @@
       b.disabled = false;
     }));
     $$('[data-till]').forEach((b) => (b.onclick = () => loadOrderIntoTill(list.find((x) => x.id === Number(b.dataset.till)))));
+    $$('[data-oedit]').forEach((b) => (b.onclick = () => editOnlineOrder(list.find((x) => x.id === Number(b.dataset.oedit)))));
+  }
+
+  // staff: change quantities / remove items of an online order
+  function editOnlineOrder(o) {
+    const items = o.items || [];
+    const qty = {};
+    items.forEach((i) => (qty[i.id] = i.qty));
+    const unit = (i) => num(i.line_total) / i.qty;
+    const label = (i) => (i.item_type === 'print' ? `Print · ${i.pages} pg (${esc(i.file_name || 'file')})` : esc(i.description));
+    const draw = () => {
+      const live = items.filter((i) => qty[i.id] > 0);
+      const total = live.reduce((s2, i) => s2 + unit(i) * qty[i.id], 0);
+      const m = openModal(`
+        <div class="modal-head"><h2>Edit order #${esc(o.code)}</h2><button class="btn btn-ghost btn-sm" data-close>Close</button></div>
+        <p class="muted" style="margin:0">Change quantities or remove items. For prints, the number is copies.</p>
+        <div class="ord-items">${items.map((i) => qty[i.id] > 0 ? `
+          <div class="ord-item" style="align-items:center">
+            <span><strong>${label(i)}</strong><br><span class="muted">${usd(unit(i))} ${i.item_type === 'print' ? 'per copy' : 'each'}</span></span>
+            <span style="display:flex;gap:6px;align-items:center">
+              <button class="qty-btn" data-edec="${i.id}" aria-label="One less">−</button><span class="qty-val num">${qty[i.id]}</span><button class="qty-btn" data-einc="${i.id}" aria-label="One more">+</button>
+              <strong class="num" style="min-width:64px;text-align:right">${usd(unit(i) * qty[i.id])}</strong>
+              <button class="btn btn-ghost btn-sm" data-edel="${i.id}">Remove</button>
+            </span>
+          </div>` : `
+          <div class="ord-item" style="opacity:.6;align-items:center"><span><s>${label(i)}</s><br><span class="muted">Will be removed</span></span><button class="btn btn-sm" data-eundo="${i.id}">Undo</button></div>`).join('')}</div>
+        <div class="ord-total"><span class="muted">New total</span><strong class="num">${usd(total)}</strong></div>
+        ${!live.length ? '<p class="form-error">Everything is removed. Saving will cancel this order.</p>' : ''}
+        <p class="form-error" id="oe-err"></p>
+        <div class="modal-foot"><button class="btn" data-close>Back</button><button class="btn btn-primary" id="oe-save">${live.length ? 'Save changes' : 'Cancel order'}</button></div>`, { wide: true });
+      $$('[data-edec],[data-einc]', m).forEach((b) => (b.onclick = () => {
+        const id = Number(b.dataset.edec || b.dataset.einc); const it = items.find((x) => x.id === id);
+        qty[id] = Math.max(0, Math.min(it.item_type === 'print' ? 500 : 100, qty[id] + (b.dataset.einc ? 1 : -1))); draw();
+      }));
+      $$('[data-edel]', m).forEach((b) => (b.onclick = () => { qty[Number(b.dataset.edel)] = 0; draw(); }));
+      $$('[data-eundo]', m).forEach((b) => (b.onclick = () => { const it = items.find((x) => x.id === Number(b.dataset.eundo)); qty[it.id] = it.qty; draw(); }));
+      $('#oe-save', m).onclick = async () => {
+        const changes = items.filter((i) => qty[i.id] !== i.qty).map((i) => ({ id: i.id, qty: qty[i.id] }));
+        if (!changes.length) return closeModal();
+        $('#oe-save', m).disabled = true;
+        try {
+          const r = await api(`/orders/${o.id}/items`, { method: 'PUT', body: { items: changes } });
+          closeModal(); toast(r.cancelled ? `#${o.code} cancelled` : `#${o.code} updated`); checkOrders(); renderOrders();
+        } catch (err) { $('#oe-err', m).textContent = err.message; $('#oe-save', m).disabled = false; }
+      };
+    };
+    draw();
   }
 
   function tellReady(o) {
