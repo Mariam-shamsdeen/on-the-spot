@@ -593,10 +593,10 @@ async function publicOrder(token) {
 // 3) customer tracks the order
 app.get('/api/public/orders/:token', wrap(async (req, res) => {
   const o = await publicOrder(req.params.token);
-  const items = await pool.query('SELECT item_type, description, qty, line_total FROM online_order_items WHERE order_id = $1 ORDER BY id', [o.id]);
+  const items = await pool.query('SELECT id, item_type, product_id, description, qty, line_total FROM online_order_items WHERE order_id = $1 ORDER BY id', [o.id]);
   const s = await getSettings();
   res.json({
-    code: o.code, status: o.status, name: o.customer_name, total_usd: o.total_usd,
+    code: o.code, status: o.status, name: o.customer_name, total_usd: o.total_usd, can_edit: o.status === 'received',
     created_at: o.created_at, updated_at: o.updated_at, items: items.rows,
     shop: { name: s.shop_name, whatsapp: s.whatsapp_number || '', hours: s.shop_hours || '', address: s.shop_address || '', exchange_rate: Number(s.exchange_rate), lbp_round: Number(s.lbp_round || 1000) },
   });
@@ -627,7 +627,7 @@ app.get('/api/orders/new-count', auth, wrap(async (req, res) => {
 app.get('/api/orders', auth, wrap(async (req, res) => {
   const done = req.query.view === 'done';
   const { rows } = await pool.query(
-    `SELECT o.id, o.code, o.customer_name, o.phone, o.note, o.status, o.total_usd, o.sale_id, o.created_at, o.updated_at,
+    `SELECT o.id, o.code, o.customer_name, o.phone, o.note, o.status, o.total_usd, o.sale_id, o.created_at, o.updated_at, o.customer_edited,
        (SELECT json_agg(json_build_object('id', i.id, 'item_type', i.item_type, 'product_id', i.product_id, 'description', i.description,
           'qty', i.qty, 'line_total', i.line_total, 'color', i.color, 'size', i.size, 'sided', i.sided, 'pages', i.pages,
           'copies', i.copies, 'extras', i.extras, 'file_id', i.file_id,
@@ -659,6 +659,64 @@ async function purgeOldFiles() {
        (SELECT id FROM online_orders WHERE status IN ('picked_up','cancelled') AND updated_at < NOW() - INTERVAL '7 days')`
   );
 }
+
+// change quantities / remove items of an online order. changes = [{ id, qty }], qty 0 removes the line.
+// Products: qty = pieces. Prints: qty = copies (pages stay the same). Prices scale from the original line.
+async function editOrderItems(orderId, changes, byCustomer) {
+  if (!Array.isArray(changes) || !changes.length) throw fail(400, 'Nothing to change.');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: items } = await client.query('SELECT * FROM online_order_items WHERE order_id = $1 ORDER BY id FOR UPDATE', [orderId]);
+    for (const ch of changes) {
+      const it = items.find((x) => x.id === Number(ch.id));
+      if (!it) throw fail(400, 'One of the items is no longer in this order. Refresh and try again.');
+      const qty = parseInt(ch.qty, 10);
+      if (!(qty >= 0) || qty > (it.item_type === 'print' ? 500 : 100)) throw fail(400, 'Quantity is out of range.');
+      if (qty === it.qty) continue;
+      if (qty === 0) { await client.query('DELETE FROM online_order_items WHERE id = $1', [it.id]); it._gone = true; continue; }
+      if (it.item_type === 'product' && qty > it.qty) {
+        const p = await client.query('SELECT name, stock_qty FROM products WHERE id = $1', [it.product_id]);
+        if (!p.rows.length || p.rows[0].stock_qty < qty) throw fail(400, `Only ${p.rows.length ? p.rows[0].stock_qty : 0} "${it.description}" in stock.`);
+      }
+      const unit = Number(it.line_total) / it.qty;
+      const lineTotal = r2(unit * qty);
+      const desc = it.item_type === 'print' ? it.description.replace(/(\d+) pg × \d+/, `$1 pg × ${qty}`) : it.description;
+      await client.query('UPDATE online_order_items SET qty = $1, copies = CASE WHEN item_type = $5 THEN $1 ELSE copies END, line_total = $2, description = $3 WHERE id = $4',
+        [qty, lineTotal, desc, it.id, 'print']);
+    }
+    const left = await client.query('SELECT COUNT(*)::int AS n, COALESCE(SUM(line_total),0) AS total FROM online_order_items WHERE order_id = $1', [orderId]);
+    const cancelled = left.rows[0].n === 0;
+    await client.query(
+      `UPDATE online_orders SET total_usd = $1, updated_at = NOW(), status = CASE WHEN $2 THEN 'cancelled' ELSE status END,
+         customer_edited = customer_edited OR $3 WHERE id = $4`,
+      [left.rows[0].total, cancelled, !!byCustomer, orderId]
+    );
+    await client.query('COMMIT');
+    return { total_usd: Number(left.rows[0].total), cancelled };
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+// customer edits the order (only before the shop starts on it)
+app.put('/api/public/orders/:token/items', wrap(async (req, res) => {
+  rateLimit(req, 'edit', 40, 60);
+  const o = await publicOrder(req.params.token);
+  if (o.status !== 'received') throw fail(400, 'The shop already started this order. Please message them to change it.');
+  res.json(await editOrderItems(o.id, (req.body || {}).items, true));
+}));
+
+// staff edits any open order
+app.put('/api/orders/:id/items', auth, wrap(async (req, res) => {
+  const { rows } = await pool.query('SELECT status FROM online_orders WHERE id = $1', [Number(req.params.id)]);
+  if (!rows.length) throw fail(404, 'Order not found.');
+  if (!['received', 'preparing', 'ready'].includes(rows[0].status)) throw fail(400, 'This order is already finished.');
+  res.json(await editOrderItems(Number(req.params.id), (req.body || {}).items, false));
+}));
 
 app.put('/api/orders/:id/status', auth, wrap(async (req, res) => {
   const status = String((req.body || {}).status || '');
