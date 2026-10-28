@@ -1036,7 +1036,7 @@
       if (!box) return;
       if (!QR) { box.innerHTML = '<span style="color:#555;font-size:12px;text-align:center">QR code needs an internet connection</span>'; return; }
       box.innerHTML = '';
-      new QR(box, { text: link, width: 264, height: 264, colorDark: '#0D0820', colorLight: '#ffffff', correctLevel: QR.CorrectLevel.M });
+      new QR(box, { text: link, width: 264, height: 264, colorDark: '#111111', colorLight: '#ffffff', correctLevel: QR.CorrectLevel.M });
     });
     $('#qr-download').onclick = () => {
       const c = $('#qr canvas'), img = $('#qr img');
